@@ -311,6 +311,11 @@ export function AdminDashboard() {
     start: '',
     end: ''
   });
+  const [blockModal, setBlockModal] = useState<{
+    mode: 'block' | 'unblock';
+    user: ApiUser;
+    reason: string;
+  } | null>(null);
 
   const adminForm = useForm<AdminFormValues>({
     defaultValues: adminDefaultValues
@@ -753,29 +758,52 @@ export function AdminDashboard() {
     });
   };
 
-  const handleBlockToggle = async (block: boolean) => {
+  const handleUnmuteDirect = async (user: ApiUser) => {
+    await unmuteUserMutation.mutateAsync({
+      id: user.id,
+      payload: {
+        chatId: user.chatId ?? DEFAULT_CHAT_ID
+      }
+    });
+  };
+
+  const handleBlockToggle = (block: boolean) => {
     if (!userModal?.entity) {
       return;
     }
 
     if (block) {
-      const reason = window.prompt('Укажите причину блокировки (необязательно)') ?? undefined;
+      setBlockModal({ mode: 'block', user: userModal.entity, reason: '' });
+    } else {
+      setBlockModal({ mode: 'unblock', user: userModal.entity, reason: '' });
+    }
+  };
 
+  const handleBlockModalConfirm = async () => {
+    if (!blockModal) {
+      return;
+    }
+
+    const payloadBase = {
+      chatId: blockModal.user.chatId ?? DEFAULT_CHAT_ID
+    };
+
+    if (blockModal.mode === 'block') {
       await blockUserMutation.mutateAsync({
-        id: userModal.entity.id,
+        id: blockModal.user.id,
         payload: {
-          chatId: userModal.entity.chatId ?? DEFAULT_CHAT_ID,
-          reason: reason?.trim() ? reason.trim() : undefined
+          ...payloadBase,
+          reason: blockModal.reason.trim() ? blockModal.reason.trim() : undefined
         }
       });
     } else {
       await unblockUserMutation.mutateAsync({
-        id: userModal.entity.id,
-        payload: {
-          chatId: userModal.entity.chatId ?? DEFAULT_CHAT_ID
-        }
+        id: blockModal.user.id,
+        payload: payloadBase
       });
     }
+
+    setBlockModal(null);
   };
 
   const handleAdminSubmit = adminForm.handleSubmit(async (values) => {
@@ -1223,6 +1251,16 @@ export function AdminDashboard() {
                       ) : null}
                     </div>
                     <div className="flex gap-2">
+                      {user.mutedUntil ? (
+                        <button
+                          type="button"
+                          onClick={() => handleUnmuteDirect(user)}
+                          disabled={isBusy}
+                          className="rounded-xl border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] px-3 py-1 text-sm text-tgText disabled:opacity-60"
+                        >
+                          Снять мут
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => openChecksModal(user)}
@@ -1449,7 +1487,7 @@ export function AdminDashboard() {
             ) : null}
           </div>
 
-              <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2">
                 {MUTE_OPTIONS.map((option) => (
                   <button
                     key={option.minutes}
@@ -1665,6 +1703,58 @@ export function AdminDashboard() {
             ? 'Это поле обязательно для заполнения.'
             : 'Это поле можно оставить пустым.'}
         </p>
+      </MobileModal>
+
+      <MobileModal
+        open={Boolean(blockModal)}
+        title={
+          blockModal?.mode === 'block' ? 'Блокировка пользователя' : 'Снять блокировку'
+        }
+        onClose={() => setBlockModal(null)}
+        footer={
+          blockModal ? (
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={handleBlockModalConfirm}
+                disabled={isBusy}
+                className={`rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-60 ${
+                  blockModal.mode === 'block' ? 'bg-red-500 text-white' : 'bg-tgButton text-tgButtonText'
+                }`}
+              >
+                {blockModal.mode === 'block' ? 'Заблокировать' : 'Разблокировать'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setBlockModal(null)}
+                className="rounded-xl border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] px-4 py-2 text-sm text-tgText"
+              >
+                Отмена
+              </button>
+            </div>
+          ) : undefined
+        }
+      >
+        {blockModal?.mode === 'block' ? (
+          <label className="flex flex-col gap-2 text-sm">
+            Причина блокировки (необязательно)
+            <textarea
+              value={blockModal.reason}
+              onChange={(event) =>
+                setBlockModal((prev) =>
+                  prev ? { ...prev, reason: event.target.value } : prev
+                )
+              }
+              rows={3}
+              className="rounded-xl border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] bg-[color:var(--tg-theme-section-bg-color,rgba(255,255,255,0.04))] px-3 py-2 text-base text-tgText"
+              placeholder="Причина, которая будет показана пользователю"
+            />
+          </label>
+        ) : (
+          <p className="text-sm text-tgHint">
+            Подтвердите снятие блокировки пользователя.
+          </p>
+        )}
       </MobileModal>
 
       <MobileModal

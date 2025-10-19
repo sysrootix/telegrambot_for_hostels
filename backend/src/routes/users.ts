@@ -169,6 +169,21 @@ async function unblockInChat(chatId: string, telegramId: string) {
   );
 }
 
+async function notifyUser(telegramId: string, message: string) {
+  const bot = getBot();
+  const userId = Number(telegramId);
+
+  if (Number.isNaN(userId)) {
+    return;
+  }
+
+  try {
+    await bot.sendMessage(userId, message);
+  } catch (error) {
+    console.error('Failed to send notification to user', telegramId, error);
+  }
+}
+
 router.get(
   '/',
   asyncHandler(async (_req, res) => {
@@ -422,6 +437,8 @@ router.post(
       }
     });
 
+    await notifyUser(user.telegramId, reason ? `Вы были заблокированы. Причина: ${reason}` : 'Вы были заблокированы.');
+
     res.json(updated);
   })
 );
@@ -458,6 +475,8 @@ router.post(
         chatId: chatId ?? user.chatId
       }
     });
+
+    await notifyUser(user.telegramId, 'Ваша блокировка снята.');
 
     res.json(updated);
   })
