@@ -48,7 +48,12 @@ else
 fi
 pm2 save
 
+echo "🗄️  Применяем миграции Prisma..."
+cd backend
+npx prisma migrate deploy
+cd "${REPO_ROOT}"
+
 echo "✅ Деплой завершён. Текущая ревизия:"
 git --no-pager log -1 --oneline
 
-echo "ℹ️ При необходимости запустите миграции Prisma вручную (npx prisma migrate deploy)."
+echo "ℹ️ Prisma migrate deploy выполнен автоматически."
