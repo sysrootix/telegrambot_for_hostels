@@ -408,7 +408,7 @@ router.get(
       getStats(ranges.day),
       getStats(ranges.week),
       getStats(ranges.month),
-      customRange ? getStats(customRange) : Promise.resolve({})
+      customRange ? getStats(customRange) : Promise.resolve<Record<string, { count: number; total: number }>>({})
     ]);
 
     const payload = users.map((user) => {
