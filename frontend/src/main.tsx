@@ -23,7 +23,18 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
       <SessionProvider>
         <HashRouter>
           <App />
-          <Toaster position="bottom-center" />
+          <Toaster
+            position="top-center"
+            containerStyle={{ paddingTop: 16 }}
+            toastOptions={{
+              style: {
+                background: 'var(--tg-theme-secondary-bg-color, #17212b)',
+                color: 'var(--tg-theme-text-color, #ffffff)',
+                borderRadius: '16px',
+                border: '1px solid var(--tg-theme-section-separator-color, rgba(255,255,255,0.08))'
+              }
+            }}
+          />
         </HashRouter>
       </SessionProvider>
     </QueryClientProvider>

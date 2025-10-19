@@ -1,14 +1,41 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 
 import { updateProfile, type UpdateProfilePayload } from '@/api/profile';
+import { listChecks, type CheckPeriod } from '@/api/checks';
 import { useSession } from '@/providers/SessionProvider';
+
+const CHECK_PERIOD_OPTIONS: { id: CheckPeriod; label: string }[] = [
+  { id: 'day', label: 'Сегодня' },
+  { id: 'week', label: 'Неделя' },
+  { id: 'month', label: 'Месяц' },
+  { id: 'custom', label: 'Период' }
+];
+
+const currencyFormatter = new Intl.NumberFormat('ru-RU', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2
+});
+
+const checkDateFormatter = new Intl.DateTimeFormat('ru-RU', {
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit'
+});
 
 export function ProfilePage() {
   const { session } = useSession();
   const queryClient = useQueryClient();
+  const [checksPeriod, setChecksPeriod] = useState<CheckPeriod>('month');
+  const [customRange, setCustomRange] = useState<{ start: string; end: string }>({
+    start: '',
+    end: ''
+  });
+  const todayDate = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const displayName = useMemo(() => {
     if (!session) {
       return '';
@@ -33,6 +60,51 @@ export function ProfilePage() {
       payoutDetails: session?.user.payoutDetails ?? ''
     }
   });
+
+  const checksQuery = useQuery({
+    queryKey: ['my-checks', checksPeriod, customRange.start, customRange.end],
+    queryFn: async () => {
+      if (checksPeriod === 'custom') {
+        return listChecks({
+          startDate: customRange.start || undefined,
+          endDate: customRange.end || undefined
+        });
+      }
+
+      return listChecks({ period: checksPeriod });
+    },
+    enabled: Boolean(session)
+  });
+
+  const myChecks = useMemo(() => checksQuery.data ?? [], [checksQuery.data]);
+  const myChecksTotals = useMemo(() => {
+    const total = myChecks.reduce((sum, check) => sum + check.amount, 0);
+    return {
+      count: myChecks.length,
+      total
+    };
+  }, [myChecks]);
+
+  const formatAmount = (value: number) => `${currencyFormatter.format(value)} ₽`;
+  const formatCheckDate = (value: string) => checkDateFormatter.format(new Date(value));
+
+  const handlePeriodChange = (period: CheckPeriod) => {
+    setChecksPeriod(period);
+
+    if (period === 'custom') {
+      setCustomRange((prev) => ({
+        start: prev.start || todayDate,
+        end: prev.end || todayDate
+      }));
+    }
+  };
+
+  const handleCustomRangeChange = (key: 'start' | 'end', value: string) => {
+    setCustomRange((prev) => ({
+      ...prev,
+      [key]: value
+    }));
+  };
 
   useEffect(() => {
     if (session?.user) {
@@ -103,14 +175,80 @@ export function ProfilePage() {
           />
         </label>
 
-        <button
-          type="submit"
-          disabled={!isDirty || isSubmitting}
-          className="mt-2 rounded-xl bg-tgButton px-4 py-2 text-sm font-semibold text-tgButtonText disabled:opacity-60"
-        >
-          Сохранить
-        </button>
-      </form>
+      <button
+        type="submit"
+        disabled={!isDirty || isSubmitting}
+        className="mt-2 rounded-xl bg-tgButton px-4 py-2 text-sm font-semibold text-tgButtonText disabled:opacity-60"
+      >
+        Сохранить
+      </button>
+    </form>
+
+      <section className="flex flex-col gap-3 rounded-2xl bg-white/5 p-4">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold">Мои чеки</h2>
+          <span className="text-xs text-tgHint">
+            {myChecksTotals.count} шт · {formatAmount(myChecksTotals.total)}
+          </span>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {CHECK_PERIOD_OPTIONS.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => handlePeriodChange(option.id)}
+              className={`rounded-xl px-3 py-1 text-sm font-medium transition-colors ${
+                checksPeriod === option.id
+                  ? 'bg-tgButton text-tgButtonText'
+                  : 'border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] bg-[color:var(--tg-theme-section-bg-color,rgba(255,255,255,0.05))] text-tgHint'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+
+        {checksPeriod === 'custom' && (
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              type="date"
+              value={customRange.start}
+              onChange={(event) => handleCustomRangeChange('start', event.target.value)}
+              className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-tgText focus:border-white/30 focus:outline-none"
+            />
+            <input
+              type="date"
+              value={customRange.end}
+              onChange={(event) => handleCustomRangeChange('end', event.target.value)}
+              className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-tgText focus:border-white/30 focus:outline-none"
+            />
+          </div>
+        )}
+
+        <div className="flex flex-col gap-2">
+          {checksQuery.isLoading ? (
+            <p className="text-sm text-tgHint">Загрузка чеков...</p>
+          ) : checksQuery.isError ? (
+            <p className="text-sm text-red-400">Не удалось загрузить чеки.</p>
+          ) : myChecks.length === 0 ? (
+            <p className="text-sm text-tgHint">Чеки не найдены.</p>
+          ) : (
+            myChecks.map((check) => (
+              <div
+                key={check.id}
+                className="flex flex-col gap-1 rounded-2xl border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] bg-[color:var(--tg-theme-section-bg-color,rgba(255,255,255,0.05))] p-3"
+              >
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-base font-semibold text-tgText">{formatAmount(check.amount)}</span>
+                  <span className="text-xs text-tgHint">{formatCheckDate(check.createdAt)}</span>
+                </div>
+                {check.note && <p className="text-xs text-tgHint">{check.note}</p>}
+              </div>
+            ))
+          )}
+        </div>
+      </section>
     </section>
   );
 }

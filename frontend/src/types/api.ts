@@ -22,6 +22,40 @@ export interface ApiAdmin {
   updatedAt: string;
 }
 
+export interface ApiCheck {
+  id: string;
+  userId: string;
+  amount: number;
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
+  user?: Pick<ApiUser, 'id' | 'telegramId' | 'firstName' | 'lastName' | 'username'>;
+}
+
+export interface CheckStats {
+  count: number;
+  total: number;
+}
+
+export interface ChecksSummaryRow {
+  user: Pick<ApiUser, 'id' | 'telegramId' | 'firstName' | 'lastName' | 'username'>;
+  day: CheckStats;
+  week: CheckStats;
+  month: CheckStats;
+  custom?: CheckStats;
+}
+
+export interface ChecksSummaryResponse {
+  generatedAt: string;
+  ranges: {
+    day: { start: string; end: string };
+    week: { start: string; end: string };
+    month: { start: string; end: string };
+    custom: { start: string; end: string } | null;
+  };
+  users: ChecksSummaryRow[];
+}
+
 export interface TelegramUser {
   id: number;
   is_bot?: boolean;

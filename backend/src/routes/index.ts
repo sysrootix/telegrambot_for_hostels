@@ -2,6 +2,7 @@ import { Router } from 'express';
 
 import { requireAdmin, requireAuth, telegramAuth } from '../middleware/auth';
 import adminRouter from './admins';
+import checksRouter from './checks';
 import profileRouter from './profile';
 import usersRouter from './users';
 
@@ -26,5 +27,6 @@ router.get('/auth/session', requireAuth, (req, res) => {
 router.use('/profile', requireAuth, profileRouter);
 router.use('/admins', requireAuth, requireAdmin, adminRouter);
 router.use('/users', requireAuth, requireAdmin, usersRouter);
+router.use('/checks', checksRouter);
 
 export default router;

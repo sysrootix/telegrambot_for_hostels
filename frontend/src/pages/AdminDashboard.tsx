@@ -18,8 +18,17 @@ import {
   updateUser,
   type UpsertUserPayload
 } from '@/api/users';
+import {
+  createCheck as createCheckApi,
+  deleteCheck as deleteCheckApi,
+  fetchChecksSummary,
+  listChecks,
+  updateCheck as updateCheckApi,
+  type CheckPeriod,
+  type ListChecksParams
+} from '@/api/checks';
 import { useSession } from '@/providers/SessionProvider';
-import type { ApiAdmin, ApiUser } from '@/types/api';
+import type { ApiAdmin, ApiCheck, ApiUser, ChecksSummaryRow } from '@/types/api';
 
 type AdminFormValues = {
   telegramId: string;
@@ -147,13 +156,91 @@ const USER_FIELD_PLACEHOLDERS: Partial<Record<keyof UserFormValues, string>> = {
 
 type UpsertUserField = Extract<keyof UserFormValues, keyof UpsertUserPayload>;
 
+type AdminTab = 'users' | 'checks' | 'admins';
+
+type CheckFormValues = {
+  amount: string;
+  note: string;
+};
+
+interface CheckFilterState {
+  period: CheckPeriod;
+  startDate?: string;
+  endDate?: string;
+}
+
+const checkFormDefaultValues: CheckFormValues = {
+  amount: '',
+  note: ''
+};
+
+const CHECK_PERIOD_OPTIONS: { id: CheckPeriod; label: string }[] = [
+  { id: 'day', label: 'Сегодня' },
+  { id: 'week', label: 'Неделя' },
+  { id: 'month', label: 'Месяц' },
+  { id: 'custom', label: 'Период' }
+];
+
+const currencyFormatter = new Intl.NumberFormat('ru-RU', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2
+});
+
+const dateTimeFormatter = new Intl.DateTimeFormat('ru-RU', {
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit'
+});
+
+const shortDateFormatter = new Intl.DateTimeFormat('ru-RU', {
+  day: '2-digit',
+  month: 'short'
+});
+
+function formatUserDisplay(user: Pick<ApiUser, 'firstName' | 'username' | 'telegramId' | 'lastName'>) {
+  if (user.firstName || user.lastName) {
+    return [user.firstName, user.lastName].filter(Boolean).join(' ').trim();
+  }
+
+  if (user.username) {
+    return `@${user.username}`;
+  }
+
+  return user.telegramId;
+}
+
+function formatCheckAmount(amount: number) {
+  return currencyFormatter.format(amount);
+}
+
+function formatRange(range?: { start: string; end: string } | null) {
+  if (!range) {
+    return '';
+  }
+
+  const start = new Date(range.start);
+  const end = new Date(range.end);
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return '';
+  }
+
+  if (start.toDateString() === end.toDateString()) {
+    return shortDateFormatter.format(start);
+  }
+
+  return `${shortDateFormatter.format(start)} — ${shortDateFormatter.format(end)}`;
+}
+
 const modalInputClass =
   'w-full rounded-2xl border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] bg-[color:var(--tg-theme-section-bg-color,rgba(255,255,255,0.04))] px-3 py-2 text-base text-tgText placeholder:text-tgHint focus:border-[color:var(--tg-theme-accent-text-color,#5aa7ff)] focus:outline-none focus:ring-0 transition-colors';
 
 export function AdminDashboard() {
   const { session } = useSession();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<'admins' | 'users'>('admins');
+  const [activeTab, setActiveTab] = useState<AdminTab>('users');
   const [adminModal, setAdminModal] = useState<{ mode: 'create' | 'edit'; entity?: ApiAdmin } | null>(
     null
   );
@@ -161,13 +248,33 @@ export function AdminDashboard() {
     null
   );
   const [helpTopic, setHelpTopic] = useState<HelpTopic | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<{
-    type: 'admin' | 'user';
-    id: string;
-    name: string;
-  } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<
+    | {
+        type: 'admin' | 'user';
+        id: string;
+        name: string;
+      }
+    | {
+        type: 'check';
+        id: string;
+        name: string;
+      }
+    | null
+  >(null);
   const [adminSearch, setAdminSearch] = useState('');
   const [userSearch, setUserSearch] = useState('');
+  const [checksModal, setChecksModal] = useState<{ user: ApiUser } | null>(null);
+  const [checkFormModal, setCheckFormModal] = useState<
+    | { mode: 'create'; user: ApiUser }
+    | { mode: 'edit'; user: ApiUser; check: ApiCheck }
+    | null
+  >(null);
+  const [checkFilters, setCheckFilters] = useState<CheckFilterState>({ period: 'month' });
+  const [summaryRange, setSummaryRange] = useState<{ start?: string; end?: string }>({});
+  const [summaryRangeDraft, setSummaryRangeDraft] = useState<{ start: string; end: string }>({
+    start: '',
+    end: ''
+  });
 
   const adminForm = useForm<AdminFormValues>({
     defaultValues: adminDefaultValues
@@ -175,6 +282,10 @@ export function AdminDashboard() {
 
   const userForm = useForm<UserFormValues>({
     defaultValues: userDefaultValues
+  });
+
+  const checkForm = useForm<CheckFormValues>({
+    defaultValues: checkFormDefaultValues
   });
 
   const adminsQuery = useQuery({
@@ -187,6 +298,46 @@ export function AdminDashboard() {
     queryKey: ['users'],
     queryFn: listUsers,
     enabled: session?.isAdmin ?? false
+  });
+
+  const checksQuery = useQuery({
+    queryKey: [
+      'checks',
+      checksModal?.user.id ?? null,
+      checkFilters.period,
+      checkFilters.startDate ?? null,
+      checkFilters.endDate ?? null
+    ],
+    queryFn: async () => {
+      if (!checksModal) {
+        return [];
+      }
+
+      const params: ListChecksParams = {
+        userId: checksModal.user.id
+      };
+
+      if (checkFilters.period === 'custom') {
+        if (checkFilters.startDate) {
+          params.startDate = checkFilters.startDate;
+        }
+
+        if (checkFilters.endDate) {
+          params.endDate = checkFilters.endDate;
+        }
+      } else {
+        params.period = checkFilters.period;
+      }
+
+      return listChecks(params);
+    },
+    enabled: Boolean(checksModal)
+  });
+
+  const checksSummaryQuery = useQuery({
+    queryKey: ['check-summary', summaryRange.start ?? null, summaryRange.end ?? null],
+    queryFn: () => fetchChecksSummary(summaryRange),
+    enabled: (session?.isAdmin ?? false) && activeTab === 'checks'
   });
 
   const createAdminMutation = useMutation({
@@ -245,6 +396,46 @@ export function AdminDashboard() {
     onError: () => toast.error('Не удалось удалить пользователя')
   });
 
+  const createCheckMutation = useMutation({
+    mutationFn: createCheckApi,
+    onSuccess: async () => {
+      toast.success('Чек создан');
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['checks'] }),
+        queryClient.invalidateQueries({ queryKey: ['check-summary'] }),
+        queryClient.invalidateQueries({ queryKey: ['my-checks'] })
+      ]);
+    },
+    onError: () => toast.error('Не удалось создать чек')
+  });
+
+  const updateCheckMutation = useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: { amount?: number; note?: string } }) =>
+      updateCheckApi(id, payload),
+    onSuccess: async () => {
+      toast.success('Чек обновлен');
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['checks'] }),
+        queryClient.invalidateQueries({ queryKey: ['check-summary'] }),
+        queryClient.invalidateQueries({ queryKey: ['my-checks'] })
+      ]);
+    },
+    onError: () => toast.error('Не удалось обновить чек')
+  });
+
+  const deleteCheckMutation = useMutation({
+    mutationFn: deleteCheckApi,
+    onSuccess: async () => {
+      toast.success('Чек удален');
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['checks'] }),
+        queryClient.invalidateQueries({ queryKey: ['check-summary'] }),
+        queryClient.invalidateQueries({ queryKey: ['my-checks'] })
+      ]);
+    },
+    onError: () => toast.error('Не удалось удалить чек')
+  });
+
   const adminList = useMemo(() => adminsQuery.data ?? [], [adminsQuery.data]);
   const userList = useMemo(() => usersQuery.data ?? [], [usersQuery.data]);
   const filteredAdminList = useMemo(() => {
@@ -287,6 +478,26 @@ export function AdminDashboard() {
       );
     });
   }, [userList, userSearch]);
+
+  const checkList = useMemo(() => checksQuery.data ?? [], [checksQuery.data]);
+
+  const checkTotals = useMemo(() => {
+    const list = checksQuery.data ?? [];
+    const total = list.reduce((acc, item) => acc + item.amount, 0);
+
+    return {
+      count: list.length,
+      total
+    };
+  }, [checksQuery.data]);
+
+  const summaryRows = useMemo(() => checksSummaryQuery.data?.users ?? [], [checksSummaryQuery.data]);
+
+  const isSummaryRangeActive = Boolean(summaryRange.start || summaryRange.end);
+
+  const summaryRanges = checksSummaryQuery.data?.ranges;
+
+  const todayDate = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
   const sanitizeAdminPayload = (values: AdminFormValues): UpsertAdminPayload => ({
     telegramId: values.telegramId.trim(),
@@ -361,8 +572,61 @@ export function AdminDashboard() {
     userForm.reset(userDefaultValues);
   };
 
+  const openChecksModal = (user: ApiUser) => {
+    setChecksModal({ user });
+    setCheckFilters({ period: 'month' });
+  };
+
+  const closeChecksModal = () => {
+    setChecksModal(null);
+    setCheckFormModal(null);
+    checkForm.reset(checkFormDefaultValues);
+  };
+
+  const openCheckCreateModal = (user: ApiUser) => {
+    checkForm.reset(checkFormDefaultValues);
+    setCheckFormModal({ mode: 'create', user });
+  };
+
+  const openCheckEditModal = (user: ApiUser, check: ApiCheck) => {
+    checkForm.reset({
+      amount: check.amount.toString(),
+      note: check.note ?? ''
+    });
+    setCheckFormModal({ mode: 'edit', user, check });
+  };
+
+  const closeCheckFormModal = () => {
+    setCheckFormModal(null);
+    checkForm.reset(checkFormDefaultValues);
+  };
+
   const openHelp = (meta: FieldMeta) => {
     setHelpTopic(meta);
+  };
+
+  const applySummaryRange = () => {
+    setSummaryRange({
+      start: summaryRangeDraft.start || undefined,
+      end: summaryRangeDraft.end || undefined
+    });
+  };
+
+  const resetSummaryRange = () => {
+    setSummaryRange({});
+    setSummaryRangeDraft({ start: '', end: '' });
+  };
+
+  const handleCheckPeriodChange = (period: CheckPeriod) => {
+    setCheckFilters((prev) => {
+      if (period === 'custom') {
+        const start = prev.startDate ?? todayDate;
+        const end = prev.endDate ?? todayDate;
+        return { period, startDate: start, endDate: end };
+      }
+
+      return { period };
+    });
   };
 
   const handleAdminSubmit = adminForm.handleSubmit(async (values) => {
@@ -454,13 +718,64 @@ export function AdminDashboard() {
     closeUserModal();
   });
 
+  const handleCheckSubmit = checkForm.handleSubmit(async (values) => {
+    if (!checkFormModal) {
+      return;
+    }
+
+    const rawAmount = values.amount.replace(',', '.');
+    const parsedAmount = Number(rawAmount);
+
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      toast.error('Введите корректную сумму');
+      return;
+    }
+
+    const normalizedAmount = Math.round(parsedAmount * 100) / 100;
+    const note = values.note.trim();
+
+    if (checkFormModal.mode === 'create') {
+      await createCheckMutation.mutateAsync({
+        userId: checkFormModal.user.id,
+        amount: normalizedAmount,
+        note: note.length > 0 ? note : undefined
+      });
+    } else {
+      const updatePayload: { amount?: number; note?: string } = {};
+
+      if (normalizedAmount !== checkFormModal.check.amount) {
+        updatePayload.amount = normalizedAmount;
+      }
+
+      const currentNote = checkFormModal.check.note ?? '';
+
+      if (note !== currentNote) {
+        updatePayload.note = note;
+      }
+
+      if (Object.keys(updatePayload).length === 0) {
+        toast('Изменений нет');
+      } else {
+        await updateCheckMutation.mutateAsync({
+          id: checkFormModal.check.id,
+          payload: updatePayload
+        });
+      }
+    }
+
+    closeCheckFormModal();
+  });
+
   const isBusy =
     createAdminMutation.isPending ||
     updateAdminMutation.isPending ||
     deleteAdminMutation.isPending ||
     createUserMutation.isPending ||
     updateUserMutation.isPending ||
-    deleteUserMutation.isPending;
+    deleteUserMutation.isPending ||
+    createCheckMutation.isPending ||
+    updateCheckMutation.isPending ||
+    deleteCheckMutation.isPending;
 
   const handleConfirmDelete = async () => {
     if (!confirmDelete) {
@@ -470,8 +785,10 @@ export function AdminDashboard() {
     try {
       if (confirmDelete.type === 'admin') {
         await deleteAdminMutation.mutateAsync(confirmDelete.id);
-      } else {
+      } else if (confirmDelete.type === 'user') {
         await deleteUserMutation.mutateAsync(confirmDelete.id);
+      } else if (confirmDelete.type === 'check') {
+        await deleteCheckMutation.mutateAsync(confirmDelete.id);
       }
       setConfirmDelete(null);
     } catch {
@@ -508,24 +825,42 @@ export function AdminDashboard() {
   const renderAdminField = (field: keyof AdminFormValues, input: React.ReactNode) =>
     renderField(ADMIN_FIELD_META[field], field, input);
 
+  const renderSummaryStat = (label: string, stats?: { count: number; total: number }) => (
+    <div className="flex flex-col gap-1 rounded-2xl border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.1))] bg-[color:var(--tg-theme-section-bg-color,rgba(255,255,255,0.04))] px-3 py-2">
+      <span className="text-xs uppercase tracking-wide text-tgHint">{label}</span>
+      <span className="text-lg font-semibold text-tgText">{stats?.count ?? 0}</span>
+      <span className="text-xs text-tgHint">
+        Сумма: {formatCheckAmount(stats?.total ?? 0)} ₽
+      </span>
+    </div>
+  );
+
   return (
     <section className="flex flex-col gap-6">
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <button
-          className={`flex-1 rounded-xl py-2 text-sm font-medium ${
-            activeTab === 'admins' ? 'bg-tgButton text-tgButtonText' : 'bg-white/5'
-          }`}
-          onClick={() => setActiveTab('admins')}
-        >
-          Администраторы ({adminList.length})
-        </button>
-        <button
-          className={`flex-1 rounded-xl py-2 text-sm font-medium ${
+          className={`flex-1 min-w-[30%] rounded-xl py-2 text-sm font-medium ${
             activeTab === 'users' ? 'bg-tgButton text-tgButtonText' : 'bg-white/5'
           }`}
           onClick={() => setActiveTab('users')}
         >
           Пользователи ({userList.length})
+        </button>
+        <button
+          className={`flex-1 min-w-[30%] rounded-xl py-2 text-sm font-medium ${
+            activeTab === 'checks' ? 'bg-tgButton text-tgButtonText' : 'bg-white/5'
+          }`}
+          onClick={() => setActiveTab('checks')}
+        >
+          Чеки
+        </button>
+        <button
+          className={`flex-1 min-w-[30%] rounded-xl py-2 text-sm font-medium ${
+            activeTab === 'admins' ? 'bg-tgButton text-tgButtonText' : 'bg-white/5'
+          }`}
+          onClick={() => setActiveTab('admins')}
+        >
+          Администраторы ({adminList.length})
         </button>
       </div>
 
@@ -597,6 +932,101 @@ export function AdminDashboard() {
             )}
           </div>
         </div>
+      ) : activeTab === 'checks' ? (
+        <div className="flex flex-col gap-4">
+          <div className="rounded-2xl bg-white/5 p-4">
+            <h2 className="text-lg font-semibold text-tgText">Сводка чеков</h2>
+            <p className="mt-1 text-sm text-tgHint">
+              Статистика по пользователям за сегодня, текущую неделю, месяц и свой период.
+            </p>
+            {checksSummaryQuery.data && (
+              <p className="mt-2 text-xs text-tgHint">
+                Обновлено: {dateTimeFormatter.format(new Date(checksSummaryQuery.data.generatedAt))}
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-3 rounded-2xl bg-white/5 p-4">
+            <span className="text-sm font-medium text-tgText">Период для сравнения</span>
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                type="date"
+                value={summaryRangeDraft.start}
+                onChange={(event) =>
+                  setSummaryRangeDraft((prev) => ({
+                    ...prev,
+                    start: event.target.value
+                  }))
+                }
+                className={modalInputClass}
+              />
+              <input
+                type="date"
+                value={summaryRangeDraft.end}
+                onChange={(event) =>
+                  setSummaryRangeDraft((prev) => ({
+                    ...prev,
+                    end: event.target.value
+                  }))
+                }
+                className={modalInputClass}
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={applySummaryRange}
+                className="flex-1 rounded-xl bg-tgButton px-4 py-2 text-sm font-semibold text-tgButtonText disabled:opacity-60"
+              >
+                Применить
+              </button>
+              <button
+                type="button"
+                onClick={resetSummaryRange}
+                disabled={!isSummaryRangeActive}
+                className="flex-1 rounded-xl border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.1))] px-4 py-2 text-sm text-tgText disabled:opacity-40"
+              >
+                Сбросить
+              </button>
+            </div>
+            <div className="text-xs text-tgHint">
+              <p>Сегодня: {formatRange(summaryRanges?.day) || '—'}</p>
+              <p>Неделя: {formatRange(summaryRanges?.week) || '—'}</p>
+              <p>Месяц: {formatRange(summaryRanges?.month) || '—'}</p>
+              {summaryRanges?.custom ? <p>Период: {formatRange(summaryRanges.custom) || '—'}</p> : null}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            {checksSummaryQuery.isLoading ? (
+              <p className="text-sm text-tgHint">Загрузка сводки...</p>
+            ) : checksSummaryQuery.isError ? (
+              <p className="text-sm text-red-400">Не удалось загрузить сводку чеков.</p>
+            ) : summaryRows.length === 0 ? (
+              <p className="text-sm text-tgHint">Пользователи не найдены.</p>
+            ) : (
+              summaryRows.map((row) => (
+                <div key={row.user.id} className="flex flex-col gap-3 rounded-2xl bg-white/5 p-4">
+                  <div className="flex flex-col">
+                    <span className="text-base font-semibold text-tgText">
+                      {formatUserDisplay(row.user)}
+                    </span>
+                    <span className="text-sm text-tgHint">
+                      @{row.user.username ?? 'без username'}
+                    </span>
+                    <span className="text-xs text-tgHint">ID: {row.user.telegramId}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
+                    {renderSummaryStat('Сегодня', row.day)}
+                    {renderSummaryStat('Неделя', row.week)}
+                    {renderSummaryStat('Месяц', row.month)}
+                    {summaryRanges?.custom ? renderSummaryStat('Период', row.custom) : null}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
       ) : (
         <div className="flex flex-col gap-4">
           <button
@@ -638,6 +1068,14 @@ export function AdminDashboard() {
                       <p className="text-sm text-tgHint">ID: {user.telegramId}</p>
                     </div>
                     <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openChecksModal(user)}
+                        disabled={isBusy}
+                        className="rounded-xl bg-tgButton px-3 py-1 text-sm font-semibold text-tgButtonText disabled:opacity-60"
+                      >
+                        Чеки
+                      </button>
                       <button
                         type="button"
                         onClick={() => openUserEditModal(user)}
@@ -811,6 +1249,172 @@ export function AdminDashboard() {
       </MobileModal>
 
       <MobileModal
+        open={Boolean(checksModal)}
+        title={checksModal ? `Чеки · ${formatUserDisplay(checksModal.user)}` : ''}
+        onClose={closeChecksModal}
+        footer={
+          checksModal ? (
+            <button
+              type="button"
+              onClick={() => openCheckCreateModal(checksModal.user)}
+              className="rounded-xl bg-tgButton px-4 py-2 text-sm font-semibold text-tgButtonText disabled:opacity-60"
+              disabled={isBusy}
+            >
+              Создать чек
+            </button>
+          ) : undefined
+        }
+      >
+        {checksModal ? (
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-wrap gap-2">
+              {CHECK_PERIOD_OPTIONS.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => handleCheckPeriodChange(option.id)}
+                  className={`rounded-xl px-3 py-1 text-sm font-medium transition-colors ${
+                    checkFilters.period === option.id
+                      ? 'bg-tgButton text-tgButtonText'
+                      : 'border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] bg-[color:var(--tg-theme-section-bg-color,rgba(255,255,255,0.05))] text-tgHint'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+
+            {checkFilters.period === 'custom' && (
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="date"
+                  value={checkFilters.startDate ?? ''}
+                  onChange={(event) =>
+                    setCheckFilters((prev) => ({
+                      ...prev,
+                      startDate: event.target.value
+                    }))
+                  }
+                  className={modalInputClass}
+                />
+                <input
+                  type="date"
+                  value={checkFilters.endDate ?? ''}
+                  onChange={(event) =>
+                    setCheckFilters((prev) => ({
+                      ...prev,
+                      endDate: event.target.value
+                    }))
+                  }
+                  className={modalInputClass}
+                />
+              </div>
+            )}
+
+            <div className="text-xs text-tgHint">
+              <span>Найдено чеков: {checkTotals.count}</span>
+              <span> · Сумма: {formatCheckAmount(checkTotals.total)} ₽</span>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              {checksQuery.isLoading ? (
+                <p className="text-sm text-tgHint">Загрузка чеков...</p>
+              ) : checksQuery.isError ? (
+                <p className="text-sm text-red-400">Не удалось загрузить чеки.</p>
+              ) : checkList.length === 0 ? (
+                <p className="text-sm text-tgHint">Чеки не найдены.</p>
+              ) : (
+                checkList.map((check) => (
+                  <div key={check.id} className="flex flex-col gap-2 rounded-2xl border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] bg-[color:var(--tg-theme-section-bg-color,rgba(255,255,255,0.05))] p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-lg font-semibold text-tgText">
+                          {formatCheckAmount(check.amount)} ₽
+                        </p>
+                        <p className="text-xs text-tgHint">
+                          {dateTimeFormatter.format(new Date(check.createdAt))}
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openCheckEditModal(checksModal.user, check)}
+                          disabled={isBusy}
+                          className="rounded-xl border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] px-3 py-1 text-xs text-tgText disabled:opacity-60"
+                        >
+                          Изменить
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setConfirmDelete({
+                              type: 'check',
+                              id: check.id,
+                              name: `${formatCheckAmount(check.amount)} ₽`
+                            })
+                          }
+                          disabled={isBusy}
+                          className="rounded-xl bg-red-500/80 px-3 py-1 text-xs text-white disabled:opacity-60"
+                        >
+                          Удалить
+                        </button>
+                      </div>
+                    </div>
+                    {check.note && <p className="text-sm text-tgHint">{check.note}</p>}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        ) : null}
+      </MobileModal>
+
+      <MobileModal
+        open={Boolean(checkFormModal)}
+        title={checkFormModal?.mode === 'edit' ? 'Редактирование чека' : 'Новый чек'}
+        onClose={closeCheckFormModal}
+      >
+        <form onSubmit={handleCheckSubmit} className="flex flex-col gap-3">
+          {checkFormModal ? (
+            <div className="rounded-2xl border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] bg-[color:var(--tg-theme-section-bg-color,rgba(255,255,255,0.05))] px-3 py-2 text-xs text-tgHint">
+              Пользователь: {formatUserDisplay(checkFormModal.user)}
+            </div>
+          ) : null}
+
+          <label className="flex flex-col gap-1 text-sm">
+            Сумма
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              inputMode="decimal"
+              {...checkForm.register('amount')}
+              placeholder="0.00"
+              className={modalInputClass}
+            />
+          </label>
+
+          <label className="flex flex-col gap-1 text-sm">
+            Заметка
+            <textarea
+              rows={3}
+              {...checkForm.register('note')}
+              placeholder="Комментарий к чеку"
+              className={`${modalInputClass} min-h-[96px]`}
+            />
+          </label>
+
+          <button
+            type="submit"
+            disabled={isBusy}
+            className="mt-2 rounded-xl bg-tgButton px-4 py-2 text-sm font-semibold text-tgButtonText disabled:opacity-60"
+          >
+            {checkFormModal?.mode === 'edit' ? 'Сохранить' : 'Создать'}
+          </button>
+        </form>
+      </MobileModal>
+
+      <MobileModal
         open={Boolean(helpTopic)}
         title={helpTopic?.title ?? ''}
         onClose={() => setHelpTopic(null)}
@@ -848,7 +1452,9 @@ export function AdminDashboard() {
         }
       >
         <p className="text-sm text-tgText">
-          Действительно удалить «{confirmDelete?.name}»? Это действие нельзя отменить.
+          {confirmDelete?.type === 'check'
+            ? `Удалить чек на ${confirmDelete?.name}? Это действие нельзя отменить.`
+            : `Действительно удалить «${confirmDelete?.name}»? Это действие нельзя отменить.`}
         </p>
       </MobileModal>
     </section>
