@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light dark;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background-color: var(--tg-theme-bg-color, #1c1c1d);
+  color: var(--tg-theme-text-color, #ffffff);
+}
+
+button {
+  font-family: inherit;
+}

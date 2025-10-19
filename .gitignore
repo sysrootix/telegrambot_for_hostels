@@ -1,0 +1,16 @@
+.DS_Store
+node_modules
+dist
+build
+coverage
+*.log
+*.sqlite
+backend/dist
+frontend/dist
+tmp
+.env
+.env.*
+pnpm-lock.yaml
+yarn.lock
+package-lock.json
+prisma/dev.db

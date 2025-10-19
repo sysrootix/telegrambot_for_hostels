@@ -1,0 +1,23 @@
+{
+  "name": "bot-helper-for-hostel",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace backend && npm run build --workspace frontend",
+    "dev": "concurrently -n backend,frontend \"npm run dev --workspace backend\" \"npm run dev --workspace frontend\"",
+    "lint": "npm run lint --workspace backend && npm run lint --workspace frontend",
+    "format": "npm run format --workspace backend && npm run format --workspace frontend",
+    "start:dev": "./scripts/run-dev.sh",
+    "start:prod": "./scripts/run-prod.sh"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
