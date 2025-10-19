@@ -127,6 +127,9 @@ const USER_FIELD_PLACEHOLDERS: Partial<Record<keyof UserFormValues, string>> = {
 
 type UpsertUserField = Extract<keyof UserFormValues, keyof UpsertUserPayload>;
 
+const modalInputClass =
+  'w-full rounded-2xl border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] bg-[color:var(--tg-theme-section-bg-color,rgba(255,255,255,0.04))] px-3 py-2 text-base text-tgText placeholder:text-tgHint focus:border-[color:var(--tg-theme-accent-text-color,#5aa7ff)] focus:outline-none focus:ring-0 transition-colors';
+
 export function AdminDashboard() {
   const { session } = useSession();
   const queryClient = useQueryClient();
@@ -467,16 +470,16 @@ export function AdminDashboard() {
     return (
       <label key={field as string} className="flex flex-col gap-1 text-sm">
         <span className="flex items-center justify-between gap-2">
-          <span>
-            {meta.label}{' '}
-            <span className="text-xs text-tgHint">
+          <span className="flex items-baseline gap-2 text-sm font-medium text-tgText">
+            {meta.label}
+            <span className={`text-xs ${meta.required ? 'text-tgAccent' : 'text-tgHint'}`}>
               {meta.required ? 'обязательно' : 'необязательно'}
             </span>
           </span>
           <button
             type="button"
             onClick={() => openHelp(field)}
-            className="flex h-6 w-6 items-center justify-center rounded-full border border-white/20 text-xs text-tgHint transition-colors hover:border-white/40 hover:text-tgText"
+            className="flex h-7 w-7 items-center justify-center rounded-full border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.16))] bg-[color:var(--tg-theme-section-bg-color,rgba(255,255,255,0.06))] text-xs text-tgHint transition-colors hover:border-[color:var(--tg-theme-accent-text-color,#5aa7ff)] hover:text-tgAccent"
           >
             ?
           </button>
@@ -664,7 +667,7 @@ export function AdminDashboard() {
             <input
               {...adminForm.register('telegramId')}
               placeholder="123456789"
-              className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
+              className={modalInputClass}
             />
           </label>
 
@@ -673,7 +676,7 @@ export function AdminDashboard() {
             <input
               {...adminForm.register('displayName')}
               placeholder="Имя администратора"
-              className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
+              className={modalInputClass}
             />
           </label>
 
@@ -682,7 +685,7 @@ export function AdminDashboard() {
             <textarea
               {...adminForm.register('notes')}
               rows={3}
-              className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
+              className={`${modalInputClass} min-h-[96px]`}
             />
           </label>
 
@@ -707,7 +710,7 @@ export function AdminDashboard() {
             <input
               {...userForm.register('telegramId')}
               placeholder={USER_FIELD_PLACEHOLDERS.telegramId}
-              className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
+              className={modalInputClass}
             />
           )}
 
@@ -717,7 +720,7 @@ export function AdminDashboard() {
               <input
                 {...userForm.register('firstName')}
                 placeholder={USER_FIELD_PLACEHOLDERS.firstName}
-                className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
+                className={modalInputClass}
               />
             )}
             {renderUserField(
@@ -725,7 +728,7 @@ export function AdminDashboard() {
               <input
                 {...userForm.register('lastName')}
                 placeholder={USER_FIELD_PLACEHOLDERS.lastName}
-                className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
+                className={modalInputClass}
               />
             )}
           </div>
@@ -736,7 +739,7 @@ export function AdminDashboard() {
               <input
                 {...userForm.register('username')}
                 placeholder={USER_FIELD_PLACEHOLDERS.username}
-                className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
+                className={modalInputClass}
               />
             )}
             {renderUserField(
@@ -744,7 +747,7 @@ export function AdminDashboard() {
               <input
                 {...userForm.register('phone')}
                 placeholder={USER_FIELD_PLACEHOLDERS.phone}
-                className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
+                className={modalInputClass}
               />
             )}
           </div>
@@ -755,7 +758,7 @@ export function AdminDashboard() {
               {...userForm.register('bio')}
               rows={3}
               placeholder={USER_FIELD_PLACEHOLDERS.bio}
-              className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
+              className={`${modalInputClass} min-h-[96px]`}
             />
           )}
 
@@ -764,7 +767,7 @@ export function AdminDashboard() {
             <input
               {...userForm.register('languageCode')}
               placeholder={USER_FIELD_PLACEHOLDERS.languageCode}
-              className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
+              className={modalInputClass}
             />
           )}
 
@@ -774,7 +777,7 @@ export function AdminDashboard() {
               {...userForm.register('payoutDetails')}
               rows={3}
               placeholder={USER_FIELD_PLACEHOLDERS.payoutDetails}
-              className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
+              className={`${modalInputClass} min-h-[112px]`}
             />
           )}
 

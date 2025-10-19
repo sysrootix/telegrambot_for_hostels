@@ -41,6 +41,10 @@ git pull --ff-only "${REMOTE}" "${BRANCH}"
 echo "📦 Устанавливаем зависимости (npm install)..."
 npm install
 
+cd backend
+npx prisma generate
+cd ..
+
 echo "🛠️  Сборка backend..."
 npm run build --workspace backend
 
