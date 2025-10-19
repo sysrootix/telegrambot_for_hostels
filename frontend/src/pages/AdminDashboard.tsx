@@ -758,14 +758,6 @@ export function AdminDashboard() {
     });
   };
 
-  const handleUnmuteDirect = async (user: ApiUser) => {
-    await unmuteUserMutation.mutateAsync({
-      id: user.id,
-      payload: {
-        chatId: user.chatId ?? DEFAULT_CHAT_ID
-      }
-    });
-  };
 
   const handleBlockToggle = (block: boolean) => {
     if (!userModal?.entity) {
@@ -1250,17 +1242,7 @@ export function AdminDashboard() {
                         </p>
                       ) : null}
                     </div>
-                    <div className="flex gap-2">
-                      {user.mutedUntil ? (
-                        <button
-                          type="button"
-                          onClick={() => handleUnmuteDirect(user)}
-                          disabled={isBusy}
-                          className="rounded-xl border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] px-3 py-1 text-sm text-tgText disabled:opacity-60"
-                        >
-                          Снять мут
-                        </button>
-                      ) : null}
+                    <div className="flex flex-wrap justify-end gap-2">
                       <button
                         type="button"
                         onClick={() => openChecksModal(user)}
@@ -1488,39 +1470,41 @@ export function AdminDashboard() {
           </div>
 
           <div className="flex flex-wrap gap-2">
-                {MUTE_OPTIONS.map((option) => (
-                  <button
-                    key={option.minutes}
-                    type="button"
-                    onClick={() => handleMuteUser(option.minutes)}
-                    disabled={isBusy || !canModerateSelectedUser}
-                    className="rounded-xl border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] px-3 py-1 text-xs text-tgText disabled:opacity-60"
-                  >
-                    Мут {option.label}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={handleUnmuteUser}
-                  disabled={isBusy || !canModerateSelectedUser}
-                  className="rounded-xl border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] px-3 py-1 text-xs text-tgText disabled:opacity-60"
-                >
-                  Снять мут
-                </button>
-              </div>
-
+            {MUTE_OPTIONS.map((option) => (
               <button
+                key={option.minutes}
                 type="button"
-                onClick={() => handleBlockToggle(!selectedUser.isBlocked)}
-                disabled={isBusy}
-                className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${
-                  selectedUser.isBlocked
-                    ? 'border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] text-tgText'
-                    : 'bg-red-500 text-white'
-                } disabled:opacity-60`}
+                onClick={() => handleMuteUser(option.minutes)}
+                disabled={isBusy || !canModerateSelectedUser}
+                className="rounded-xl border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] px-3 py-1 text-xs text-tgText disabled:opacity-60"
               >
-                {selectedUser.isBlocked ? 'Разблокировать' : 'Заблокировать'}
+                Мут {option.label}
               </button>
+            ))}
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={handleUnmuteUser}
+              disabled={isBusy || !canModerateSelectedUser || !selectedUser.mutedUntil}
+              className="rounded-xl bg-tgButton px-4 py-2 text-sm font-semibold text-tgButtonText disabled:opacity-60"
+            >
+              Снять мут
+            </button>
+            <button
+              type="button"
+              onClick={() => handleBlockToggle(!selectedUser.isBlocked)}
+              disabled={isBusy}
+              className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${
+                selectedUser.isBlocked
+                  ? 'border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] text-tgText'
+                  : 'bg-red-500 text-white'
+              } disabled:opacity-60`}
+            >
+              {selectedUser.isBlocked ? 'Разблокировать' : 'Заблокировать'}
+            </button>
+          </div>
         </div>
       ) : null}
         </>
