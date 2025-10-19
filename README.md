@@ -86,26 +86,27 @@ VITE_API_BASE_URL=/api
 Тесты пока не реализованы. Перед деплоем стоит добавить модульные тесты для сервисов и компонента админ-панели.
 
 ## Продакшен деплой (кратко)
-1. На сервере подтянуть изменения и выполнить полный деплой (pull → npm install → build → копирование фронта → PM2 reload):
+1. Убедитесь, что настроены файлы окружения `backend/.env.production` и `frontend/.env.production` (см. пример `.example`).
+2. На сервере подтянуть изменения и выполнить полный деплой (pull → npm install → build → копирование фронта → PM2 reload → prisma migrate deploy):
    ```bash
    cd /path/to/telegrambot_for_hostels
-   WEB_ROOT=/var/www/bot-helper-for-hostel/frontend ./scripts/git-pull.sh
+   ./scripts/git-pull.sh
    ```
    Скрипт требует установленные `npm`, `pm2`, `rsync`.
-2. Настроить nginx. Пример лежит в `deploy/nginx/bot.sysrootix.com.conf`. Скопируйте файл в `/etc/nginx/sites-available/`, создайте симлинк в `sites-enabled` и перезапустите nginx:
-   ```bash
-   sudo mkdir -p /var/www/letsencrypt
-   sudo cp deploy/nginx/bot.sysrootix.com.conf /etc/nginx/sites-available/bot.sysrootix.com.conf
-   sudo ln -s /etc/nginx/sites-available/bot.sysrootix.com.conf /etc/nginx/sites-enabled/
-   sudo nginx -t
-   sudo systemctl reload nginx
-   ```
-3. Выпустить сертификаты Let’s Encrypt (пример для certbot):
-   ```bash
-   sudo certbot certonly --nginx -d bot.sysrootix.com
-   sudo systemctl reload nginx
-   ```
-4. Проверьте, что WebApp открывается по `https://bot.sysrootix.com`, а API отвечает на `https://bot.sysrootix.com/api/health`.
+3. Настроить nginx. Пример лежит в `deploy/nginx/bot.sysrootix.com.conf`. Скопируйте файл в `/etc/nginx/sites-available/`, создайте симлинк в `sites-enabled` и перезапустите nginx:
+    ```bash
+    sudo mkdir -p /var/www/letsencrypt
+    sudo cp deploy/nginx/bot.sysrootix.com.conf /etc/nginx/sites-available/bot.sysrootix.com.conf
+    sudo ln -s /etc/nginx/sites-available/bot.sysrootix.com.conf /etc/nginx/sites-enabled/
+    sudo nginx -t
+    sudo systemctl reload nginx
+    ```
+4. Выпустить сертификаты Let’s Encrypt (пример для certbot):
+    ```bash
+    sudo certbot certonly --nginx -d bot.sysrootix.com
+    sudo systemctl reload nginx
+    ```
+5. Проверьте, что WebApp открывается по `https://bot.sysrootix.com`, а API отвечает на `https://bot.sysrootix.com/api/health`.
 
 ## Дальшие шаги
 - Настроить полноценную авторизацию (JWT / сессии по initData).

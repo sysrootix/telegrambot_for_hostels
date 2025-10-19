@@ -17,6 +17,17 @@ fi
 
 cd "${REPO_ROOT}"
 
+BACKEND_ENV_FILE="${REPO_ROOT}/backend/.env.production"
+FRONTEND_ENV_FILE="${REPO_ROOT}/frontend/.env.production"
+if [[ ! -f "${BACKEND_ENV_FILE}" ]]; then
+  echo "❌ Не найден файл ${BACKEND_ENV_FILE}. Создайте его на основе backend/.env.production.example." >&2
+  exit 1
+fi
+if [[ ! -f "${FRONTEND_ENV_FILE}" ]]; then
+  echo "❌ Не найден файл ${FRONTEND_ENV_FILE}. Создайте его на основе frontend/.env.production.example." >&2
+  exit 1
+fi
+
 BRANCH="${GIT_BRANCH:-$(git symbolic-ref --short HEAD 2>/dev/null || echo main)}"
 REMOTE="${GIT_REMOTE:-origin}"
 WEB_ROOT="/var/www/bot-helper-for-hostel/frontend"
@@ -41,10 +52,12 @@ mkdir -p "${WEB_ROOT}"
 rsync -a --delete frontend/dist/ "${WEB_ROOT}/"
 
 echo "🚀 Обновляем PM2 процесс (${PM2_APP_NAME})..."
+export NODE_ENV=production
+export DOTENV_CONFIG_PATH="${BACKEND_ENV_FILE}"
 if pm2 describe "${PM2_APP_NAME}" >/dev/null 2>&1; then
-  pm2 reload "${PM2_APP_NAME}"
+  pm2 reload "${PM2_APP_NAME}" --update-env
 else
-  pm2 start "${PM2_ENTRY}" --name "${PM2_APP_NAME}"
+  pm2 start "${PM2_ENTRY}" --name "${PM2_APP_NAME}" --update-env
 fi
 pm2 save
 
