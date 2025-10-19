@@ -1,10 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
-if ! command -v git >/dev/null 2>&1; then
-  echo "❌ git не найден. Установите Git перед использованием скрипта." >&2
-  exit 1
-fi
+REQUIRED_CMDS=("git" "npm" "pm2" "rsync")
+for cmd in "${REQUIRED_CMDS[@]}"; do
+  if ! command -v "${cmd}" >/dev/null 2>&1; then
+    echo "❌ Требуется команда '${cmd}'. Установите её перед запуском." >&2
+    exit 1
+  fi
+done
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 if [[ -z "${REPO_ROOT}" ]]; then
@@ -14,14 +17,38 @@ fi
 
 cd "${REPO_ROOT}"
 
-BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+BRANCH="${GIT_BRANCH:-$(git symbolic-ref --short HEAD 2>/dev/null || echo main)}"
 REMOTE="${GIT_REMOTE:-origin}"
+WEB_ROOT="/var/www/bot-helper-for-hostel/frontend"
+PM2_APP_NAME="${PM2_APP_NAME:-hostel-bot-backend}"
+PM2_ENTRY="${PM2_ENTRY:-backend/dist/server.js}"
 
-echo "🔍 Тянем изменения из ${REMOTE}/${BRANCH}..."
+echo "🔍 Обновляем репозиторий (${REMOTE}/${BRANCH})..."
 git fetch "${REMOTE}" --prune
 git pull --ff-only "${REMOTE}" "${BRANCH}"
 
-echo "✅ Репозиторий обновлён. Текущая ревизия:"
+echo "📦 Устанавливаем зависимости (npm install)..."
+npm install
+
+echo "🛠️  Сборка backend..."
+npm run build --workspace backend
+
+echo "🛠️  Сборка frontend..."
+npm run build --workspace frontend
+
+echo "📁 Деплой фронтенда в ${WEB_ROOT}..."
+mkdir -p "${WEB_ROOT}"
+rsync -a --delete frontend/dist/ "${WEB_ROOT}/"
+
+echo "🚀 Обновляем PM2 процесс (${PM2_APP_NAME})..."
+if pm2 describe "${PM2_APP_NAME}" >/dev/null 2>&1; then
+  pm2 reload "${PM2_APP_NAME}"
+else
+  pm2 start "${PM2_ENTRY}" --name "${PM2_APP_NAME}"
+fi
+pm2 save
+
+echo "✅ Деплой завершён. Текущая ревизия:"
 git --no-pager log -1 --oneline
 
-echo "ℹ️ При необходимости запустите npm install / build / pm2 restart вручную."
+echo "ℹ️ При необходимости запустите миграции Prisma вручную (npx prisma migrate deploy)."
