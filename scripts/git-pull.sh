@@ -53,7 +53,7 @@ rsync -a --delete frontend/dist/ "${WEB_ROOT}/"
 
 echo "🌱 Экспортируем переменные окружения backend (.env.production)..."
 set -o allexport
-source "${BACKEND_ENV_FILE}"
+source <(sed -e 's/\r$//' "${BACKEND_ENV_FILE}")
 set +o allexport
 export NODE_ENV="${NODE_ENV:-production}"
 
