@@ -51,9 +51,13 @@ echo "📁 Деплой фронтенда в ${WEB_ROOT}..."
 mkdir -p "${WEB_ROOT}"
 rsync -a --delete frontend/dist/ "${WEB_ROOT}/"
 
+echo "🌱 Экспортируем переменные окружения backend (.env.production)..."
+set -o allexport
+source "${BACKEND_ENV_FILE}"
+set +o allexport
+export NODE_ENV="${NODE_ENV:-production}"
+
 echo "🚀 Обновляем PM2 процесс (${PM2_APP_NAME})..."
-export NODE_ENV=production
-export DOTENV_CONFIG_PATH="${BACKEND_ENV_FILE}"
 if pm2 describe "${PM2_APP_NAME}" >/dev/null 2>&1; then
   pm2 reload "${PM2_APP_NAME}" --update-env
 else
