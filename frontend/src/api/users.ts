@@ -11,6 +11,7 @@ export interface UpsertUserPayload {
   photoUrl?: string;
   phone?: string;
   bio?: string;
+  payoutDetails?: string;
 }
 
 export async function listUsers() {

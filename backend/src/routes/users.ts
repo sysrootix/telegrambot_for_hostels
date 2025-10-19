@@ -6,6 +6,15 @@ import { asyncHandler } from '../utils/asyncHandler';
 
 const router = Router();
 
+const sanitizeNullableString = (value?: string) => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
 const userBodySchema = z.object({
   telegramId: z.string().min(1, 'telegramId is required'),
   username: z.string().optional(),
@@ -14,7 +23,8 @@ const userBodySchema = z.object({
   languageCode: z.string().optional(),
   photoUrl: z.string().url().optional(),
   phone: z.string().optional(),
-  bio: z.string().optional()
+  bio: z.string().optional(),
+  payoutDetails: z.string().max(2000).optional()
 });
 const updateUserSchema = userBodySchema.partial();
 
@@ -50,16 +60,38 @@ router.post(
   '/',
   asyncHandler(async (req, res) => {
     const data = userBodySchema.parse(req.body);
+    const sanitizedTelegramId = data.telegramId.trim();
 
     const existing = await prisma.user.findUnique({
-      where: { telegramId: data.telegramId }
+      where: { telegramId: sanitizedTelegramId }
     });
 
     if (existing) {
       return res.status(409).json({ error: 'User with this telegramId already exists' });
     }
 
-    const user = await prisma.user.create({ data });
+    const username = sanitizeNullableString(data.username);
+    const firstName = sanitizeNullableString(data.firstName);
+    const lastName = sanitizeNullableString(data.lastName);
+    const languageCode = sanitizeNullableString(data.languageCode);
+    const photoUrl = sanitizeNullableString(data.photoUrl);
+    const phone = sanitizeNullableString(data.phone);
+    const bio = sanitizeNullableString(data.bio);
+    const payoutDetails = sanitizeNullableString(data.payoutDetails);
+
+    const user = await prisma.user.create({
+      data: {
+        telegramId: sanitizedTelegramId,
+        ...(username !== undefined ? { username } : {}),
+        ...(firstName !== undefined ? { firstName } : {}),
+        ...(lastName !== undefined ? { lastName } : {}),
+        ...(languageCode !== undefined ? { languageCode } : {}),
+        ...(photoUrl !== undefined ? { photoUrl } : {}),
+        ...(phone !== undefined ? { phone } : {}),
+        ...(bio !== undefined ? { bio } : {}),
+        ...(payoutDetails !== undefined ? { payoutDetails } : {})
+      }
+    });
 
     res.status(201).json(user);
   })
@@ -72,18 +104,40 @@ router.put(
     const data = updateUserSchema.parse(req.body);
 
     if (data.telegramId) {
+      const trimmedTelegramId = data.telegramId.trim();
       const existing = await prisma.user.findUnique({
-        where: { telegramId: data.telegramId }
+        where: { telegramId: trimmedTelegramId }
       });
 
       if (existing && existing.id !== id) {
         return res.status(409).json({ error: 'User with this telegramId already exists' });
       }
+
+      data.telegramId = trimmedTelegramId;
     }
+
+    const username = sanitizeNullableString(data.username);
+    const firstName = sanitizeNullableString(data.firstName);
+    const lastName = sanitizeNullableString(data.lastName);
+    const languageCode = sanitizeNullableString(data.languageCode);
+    const photoUrl = sanitizeNullableString(data.photoUrl);
+    const phone = sanitizeNullableString(data.phone);
+    const bio = sanitizeNullableString(data.bio);
+    const payoutDetails = sanitizeNullableString(data.payoutDetails);
 
     const user = await prisma.user.update({
       where: { id },
-      data
+      data: {
+        ...(data.telegramId ? { telegramId: data.telegramId } : {}),
+        ...(username !== undefined ? { username } : {}),
+        ...(firstName !== undefined ? { firstName } : {}),
+        ...(lastName !== undefined ? { lastName } : {}),
+        ...(languageCode !== undefined ? { languageCode } : {}),
+        ...(photoUrl !== undefined ? { photoUrl } : {}),
+        ...(phone !== undefined ? { phone } : {}),
+        ...(bio !== undefined ? { bio } : {}),
+        ...(payoutDetails !== undefined ? { payoutDetails } : {})
+      }
     });
 
     res.json(user);

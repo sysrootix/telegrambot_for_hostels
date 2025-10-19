@@ -8,6 +8,7 @@ export interface ApiUser {
   photoUrl: string | null;
   phone: string | null;
   bio: string | null;
+  payoutDetails: string | null;
   createdAt: string;
   updatedAt: string;
 }

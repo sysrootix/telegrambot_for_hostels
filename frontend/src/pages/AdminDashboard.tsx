@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 
+import { MobileModal } from '@/components/MobileModal';
 import {
   createAdmin,
   deleteAdmin,
@@ -17,80 +18,141 @@ import {
   updateUser,
   type UpsertUserPayload
 } from '@/api/users';
-import type { ApiAdmin, ApiUser } from '@/types/api';
 import { useSession } from '@/providers/SessionProvider';
+import type { ApiAdmin, ApiUser } from '@/types/api';
 
-type AdminFormValues = UpsertAdminPayload;
-type UserFormValues = UpsertUserPayload;
+type AdminFormValues = {
+  telegramId: string;
+  displayName: string;
+  notes: string;
+};
+
+const adminDefaultValues: AdminFormValues = {
+  telegramId: '',
+  displayName: '',
+  notes: ''
+};
+
+type UserFormValues = {
+  telegramId: string;
+  username: string;
+  firstName: string;
+  lastName: string;
+  phone: string;
+  bio: string;
+  languageCode: string;
+  payoutDetails: string;
+};
+
+const userDefaultValues: UserFormValues = {
+  telegramId: '',
+  username: '',
+  firstName: '',
+  lastName: '',
+  phone: '',
+  bio: '',
+  languageCode: '',
+  payoutDetails: ''
+};
+
+interface HelpTopic {
+  title: string;
+  description: string;
+  required: boolean;
+}
+
+const USER_FIELD_META: Record<
+  keyof UserFormValues,
+  { label: string; required: boolean; description: string }
+> = {
+  telegramId: {
+    label: 'telegramId',
+    required: true,
+    description:
+      'Уникальный идентификатор пользователя в Telegram. Узнайте его через бота @getmyid_bot или другими инструментами.'
+  },
+  username: {
+    label: 'Username',
+    required: false,
+    description:
+      'Публичный ник пользователя в Telegram. Начинается с @ и помогает быстрее находить аккаунт.'
+  },
+  firstName: {
+    label: 'Имя',
+    required: false,
+    description:
+      'Имя пользователя, отображается в панели и используется для персонализации уведомлений.'
+  },
+  lastName: {
+    label: 'Фамилия',
+    required: false,
+    description: 'Фамилия пользователя. Поле необязательно, но помогает точнее идентифицировать.'
+  },
+  phone: {
+    label: 'Номер телефона',
+    required: false,
+    description:
+      'Контактный номер пользователя. Можно указать любой международный номер в формате +12345678900.'
+  },
+  bio: {
+    label: 'Описание',
+    required: false,
+    description:
+      'Краткое описание, заметки или комментарии о пользователе. Видно администраторам.'
+  },
+  languageCode: {
+    label: 'Язык',
+    required: false,
+    description:
+      'Код языка Telegram (например, ru, en). Используется для настройки локализации внутри сервиса.'
+  },
+  payoutDetails: {
+    label: 'Реквизиты',
+    required: false,
+    description:
+      'Информация для выплат: номер карты, криптокошелёк или любой другой удобный способ перечислений.'
+  }
+};
+
+const USER_FIELD_PLACEHOLDERS: Partial<Record<keyof UserFormValues, string>> = {
+  telegramId: '123456789',
+  username: '@username',
+  firstName: 'Иван',
+  lastName: 'Иванов',
+  phone: '+12345678900',
+  bio: 'Короткая заметка о пользователе',
+  languageCode: 'ru',
+  payoutDetails: 'Карта **** 1234, USDT TRC20, PayPal...'
+};
+
+type UpsertUserField = Extract<keyof UserFormValues, keyof UpsertUserPayload>;
 
 export function AdminDashboard() {
   const { session } = useSession();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<'admins' | 'users'>('admins');
-  const [editingAdmin, setEditingAdmin] = useState<ApiAdmin | null>(null);
-  const [editingUser, setEditingUser] = useState<ApiUser | null>(null);
+  const [adminModal, setAdminModal] = useState<{ mode: 'create' | 'edit'; entity?: ApiAdmin } | null>(
+    null
+  );
+  const [userModal, setUserModal] = useState<{ mode: 'create' | 'edit'; entity?: ApiUser } | null>(
+    null
+  );
+  const [helpTopic, setHelpTopic] = useState<HelpTopic | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{
+    type: 'admin' | 'user';
+    id: string;
+    name: string;
+  } | null>(null);
+  const [adminSearch, setAdminSearch] = useState('');
+  const [userSearch, setUserSearch] = useState('');
 
   const adminForm = useForm<AdminFormValues>({
-    defaultValues: {
-      telegramId: '',
-      displayName: '',
-      notes: ''
-    }
+    defaultValues: adminDefaultValues
   });
 
   const userForm = useForm<UserFormValues>({
-    defaultValues: {
-      telegramId: '',
-      username: '',
-      firstName: '',
-      lastName: '',
-      phone: '',
-      bio: '',
-      languageCode: ''
-    }
+    defaultValues: userDefaultValues
   });
-
-  useEffect(() => {
-    if (!editingAdmin) {
-      adminForm.reset({
-        telegramId: '',
-        displayName: '',
-        notes: ''
-      });
-      return;
-    }
-
-    adminForm.reset({
-      telegramId: editingAdmin.telegramId,
-      displayName: editingAdmin.displayName ?? '',
-      notes: editingAdmin.notes ?? ''
-    });
-  }, [adminForm, editingAdmin]);
-
-  useEffect(() => {
-    if (!editingUser) {
-      userForm.reset({
-        telegramId: '',
-        username: '',
-        firstName: '',
-        lastName: '',
-        phone: '',
-        bio: '',
-        languageCode: ''
-      });
-      return;
-    }
-
-    userForm.reset({
-      telegramId: editingUser.telegramId,
-      username: editingUser.username ?? '',
-      firstName: editingUser.firstName ?? '',
-      lastName: editingUser.lastName ?? '',
-      phone: editingUser.phone ?? '',
-      bio: editingUser.bio ?? '',
-      languageCode: editingUser.languageCode ?? ''
-    });
-  }, [editingUser, userForm]);
 
   const adminsQuery = useQuery({
     queryKey: ['admins'],
@@ -162,6 +224,46 @@ export function AdminDashboard() {
 
   const adminList = useMemo(() => adminsQuery.data ?? [], [adminsQuery.data]);
   const userList = useMemo(() => usersQuery.data ?? [], [usersQuery.data]);
+  const filteredAdminList = useMemo(() => {
+    const query = adminSearch.trim().toLowerCase();
+
+    if (!query) {
+      return adminList;
+    }
+
+    return adminList.filter((admin) => {
+      const displayName = admin.displayName?.toLowerCase() ?? '';
+      const notes = admin.notes?.toLowerCase() ?? '';
+
+      return (
+        admin.telegramId.toLowerCase().includes(query) ||
+        displayName.includes(query) ||
+        notes.includes(query)
+      );
+    });
+  }, [adminList, adminSearch]);
+  const filteredUserList = useMemo(() => {
+    const query = userSearch.trim().toLowerCase();
+
+    if (!query) {
+      return userList;
+    }
+
+    return userList.filter((user) => {
+      const firstName = user.firstName?.toLowerCase() ?? '';
+      const lastName = user.lastName?.toLowerCase() ?? '';
+      const username = user.username?.toLowerCase() ?? '';
+      const payoutDetails = user.payoutDetails?.toLowerCase() ?? '';
+
+      return (
+        user.telegramId.toLowerCase().includes(query) ||
+        firstName.includes(query) ||
+        lastName.includes(query) ||
+        username.includes(query) ||
+        payoutDetails.includes(query)
+      );
+    });
+  }, [userList, userSearch]);
 
   const sanitizeAdminPayload = (values: AdminFormValues): UpsertAdminPayload => ({
     telegramId: values.telegramId.trim(),
@@ -169,15 +271,81 @@ export function AdminDashboard() {
     notes: values.notes?.trim() ? values.notes.trim() : undefined
   });
 
-  const sanitizeUserPayload = (values: UserFormValues): UpsertUserPayload => ({
-    telegramId: values.telegramId.trim(),
-    username: values.username?.trim() || undefined,
-    firstName: values.firstName?.trim() || undefined,
-    lastName: values.lastName?.trim() || undefined,
-    phone: values.phone?.trim() || undefined,
-    bio: values.bio?.trim() || undefined,
-    languageCode: values.languageCode?.trim() || undefined
-  });
+  const sanitizeUserPayload = (values: UserFormValues): UpsertUserPayload => {
+    const payload: UpsertUserPayload = {
+      telegramId: values.telegramId.trim()
+    };
+
+    const apply = (key: UpsertUserField) => {
+      const value = values[key].trim();
+
+      if (value.length > 0) {
+        payload[key] = value;
+      }
+    };
+
+    apply('username');
+    apply('firstName');
+    apply('lastName');
+    apply('phone');
+    apply('bio');
+    apply('languageCode');
+    apply('payoutDetails');
+
+    return payload;
+  };
+
+  const openAdminCreateModal = () => {
+    adminForm.reset(adminDefaultValues);
+    setAdminModal({ mode: 'create' });
+  };
+
+  const openAdminEditModal = (admin: ApiAdmin) => {
+    adminForm.reset({
+      telegramId: admin.telegramId,
+      displayName: admin.displayName ?? '',
+      notes: admin.notes ?? ''
+    });
+    setAdminModal({ mode: 'edit', entity: admin });
+  };
+
+  const closeAdminModal = () => {
+    setAdminModal(null);
+    adminForm.reset(adminDefaultValues);
+  };
+
+  const openUserCreateModal = () => {
+    userForm.reset(userDefaultValues);
+    setUserModal({ mode: 'create' });
+  };
+
+  const openUserEditModal = (user: ApiUser) => {
+    userForm.reset({
+      telegramId: user.telegramId,
+      username: user.username ?? '',
+      firstName: user.firstName ?? '',
+      lastName: user.lastName ?? '',
+      phone: user.phone ?? '',
+      bio: user.bio ?? '',
+      languageCode: user.languageCode ?? '',
+      payoutDetails: user.payoutDetails ?? ''
+    });
+    setUserModal({ mode: 'edit', entity: user });
+  };
+
+  const closeUserModal = () => {
+    setUserModal(null);
+    userForm.reset(userDefaultValues);
+  };
+
+  const openHelp = (field: keyof UserFormValues) => {
+    const meta = USER_FIELD_META[field];
+    setHelpTopic({
+      title: meta.label,
+      description: meta.description,
+      required: meta.required
+    });
+  };
 
   const handleAdminSubmit = adminForm.handleSubmit(async (values) => {
     const payload = sanitizeAdminPayload(values);
@@ -187,12 +355,12 @@ export function AdminDashboard() {
       return;
     }
 
-    if (editingAdmin) {
+    if (adminModal?.mode === 'edit' && adminModal.entity) {
       const updatePayload: Partial<UpsertAdminPayload> = {};
-      const currentDisplayName = editingAdmin.displayName ?? undefined;
-      const currentNotes = editingAdmin.notes ?? undefined;
+      const currentDisplayName = adminModal.entity.displayName ?? undefined;
+      const currentNotes = adminModal.entity.notes ?? undefined;
 
-      if (payload.telegramId !== editingAdmin.telegramId) {
+      if (payload.telegramId !== adminModal.entity.telegramId) {
         updatePayload.telegramId = payload.telegramId;
       }
       if (payload.displayName !== currentDisplayName) {
@@ -202,20 +370,19 @@ export function AdminDashboard() {
         updatePayload.notes = payload.notes;
       }
 
-      await updateAdminMutation.mutateAsync({
-        id: editingAdmin.id,
-        payload: updatePayload
-      });
-      setEditingAdmin(null);
+      if (Object.keys(updatePayload).length === 0) {
+        toast('Изменений нет');
+      } else {
+        await updateAdminMutation.mutateAsync({
+          id: adminModal.entity.id,
+          payload: updatePayload
+        });
+      }
     } else {
       await createAdminMutation.mutateAsync(payload);
     }
 
-    adminForm.reset({
-      telegramId: '',
-      displayName: '',
-      notes: ''
-    });
+    closeAdminModal();
   });
 
   const handleUserSubmit = userForm.handleSubmit(async (values) => {
@@ -226,45 +393,47 @@ export function AdminDashboard() {
       return;
     }
 
-    if (editingUser) {
+    if (userModal?.mode === 'edit' && userModal.entity) {
       const updatePayload: Partial<UpsertUserPayload> = {};
 
-      (Object.entries(payload) as [keyof UpsertUserPayload, string | undefined][]).forEach(
-        ([key, value]) => {
-          if (key === 'telegramId') {
-            if (value && value !== editingUser.telegramId) {
-              updatePayload.telegramId = value;
-            }
-            return;
-          }
+      if (payload.telegramId !== userModal.entity.telegramId) {
+        updatePayload.telegramId = payload.telegramId;
+      }
 
-          const currentValue = editingUser[key as keyof ApiUser];
-          const normalizedCurrent = (currentValue as string | null) ?? undefined;
+      const compare = (
+        field: keyof UserFormValues,
+        key: keyof UpsertUserPayload,
+        current: string | null
+      ) => {
+        const next = values[field].trim();
+        const normalizedCurrent = current ?? '';
 
-          if (value !== normalizedCurrent) {
-            updatePayload[key] = value;
-          }
+        if (next !== normalizedCurrent) {
+          updatePayload[key] = next;
         }
-      );
+      };
 
-      await updateUserMutation.mutateAsync({
-        id: editingUser.id,
-        payload: updatePayload
-      });
-      setEditingUser(null);
+      compare('username', 'username', userModal.entity.username);
+      compare('firstName', 'firstName', userModal.entity.firstName);
+      compare('lastName', 'lastName', userModal.entity.lastName);
+      compare('phone', 'phone', userModal.entity.phone);
+      compare('bio', 'bio', userModal.entity.bio);
+      compare('languageCode', 'languageCode', userModal.entity.languageCode);
+      compare('payoutDetails', 'payoutDetails', userModal.entity.payoutDetails);
+
+      if (Object.keys(updatePayload).length === 0) {
+        toast('Изменений нет');
+      } else {
+        await updateUserMutation.mutateAsync({
+          id: userModal.entity.id,
+          payload: updatePayload
+        });
+      }
     } else {
       await createUserMutation.mutateAsync(payload);
     }
 
-    userForm.reset({
-      telegramId: '',
-      username: '',
-      firstName: '',
-      lastName: '',
-      phone: '',
-      bio: '',
-      languageCode: ''
-    });
+    closeUserModal();
   });
 
   const isBusy =
@@ -274,6 +443,48 @@ export function AdminDashboard() {
     createUserMutation.isPending ||
     updateUserMutation.isPending ||
     deleteUserMutation.isPending;
+
+  const handleConfirmDelete = async () => {
+    if (!confirmDelete) {
+      return;
+    }
+
+    try {
+      if (confirmDelete.type === 'admin') {
+        await deleteAdminMutation.mutateAsync(confirmDelete.id);
+      } else {
+        await deleteUserMutation.mutateAsync(confirmDelete.id);
+      }
+      setConfirmDelete(null);
+    } catch {
+      // Ошибка уже отображена toast-ом, оставляем модалку открытой для повторной попытки
+    }
+  };
+
+  const renderUserField = (field: keyof UserFormValues, input: React.ReactNode) => {
+    const meta = USER_FIELD_META[field];
+
+    return (
+      <label key={field as string} className="flex flex-col gap-1 text-sm">
+        <span className="flex items-center justify-between gap-2">
+          <span>
+            {meta.label}{' '}
+            <span className="text-xs text-tgHint">
+              {meta.required ? 'обязательно' : 'необязательно'}
+            </span>
+          </span>
+          <button
+            type="button"
+            onClick={() => openHelp(field)}
+            className="flex h-6 w-6 items-center justify-center rounded-full border border-white/20 text-xs text-tgHint transition-colors hover:border-white/40 hover:text-tgText"
+          >
+            ?
+          </button>
+        </span>
+        {input}
+      </label>
+    );
+  };
 
   return (
     <section className="flex flex-col gap-6">
@@ -298,70 +509,33 @@ export function AdminDashboard() {
 
       {activeTab === 'admins' ? (
         <div className="flex flex-col gap-4">
-          <form
-            onSubmit={handleAdminSubmit}
-            className="flex flex-col gap-3 rounded-2xl bg-white/5 p-4"
+          <button
+            type="button"
+            onClick={openAdminCreateModal}
+            className="flex flex-col gap-1 rounded-2xl bg-white/5 p-4 text-left transition-colors hover:bg-white/10"
           >
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">
-                {editingAdmin ? 'Редактирование администратора' : 'Добавить администратора'}
-              </h2>
-              {editingAdmin && (
-                <button
-                  type="button"
-                  onClick={() => setEditingAdmin(null)}
-                  className="text-sm text-tgHint"
-                >
-                  Отмена
-                </button>
-              )}
-            </div>
+            <span className="text-base font-semibold text-tgText">Добавить администратора</span>
+            <span className="text-sm text-tgHint">Откроется форма создания администратора.</span>
+          </button>
 
-            <label className="flex flex-col gap-1 text-sm">
-              telegramId
-              <input
-                {...adminForm.register('telegramId')}
-                placeholder="123456789"
-                className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
-              />
-            </label>
-
-            <label className="flex flex-col gap-1 text-sm">
-              Отображаемое имя
-              <input
-                {...adminForm.register('displayName')}
-                placeholder="Имя администратора"
-                className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
-              />
-            </label>
-
-            <label className="flex flex-col gap-1 text-sm">
-              Заметка
-              <textarea
-                {...adminForm.register('notes')}
-                rows={3}
-                className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
-              />
-            </label>
-
-            <button
-              type="submit"
-              disabled={isBusy}
-              className="mt-2 rounded-xl bg-tgButton px-4 py-2 text-sm font-semibold text-tgButtonText disabled:opacity-60"
-            >
-              {editingAdmin ? 'Сохранить' : 'Добавить'}
-            </button>
-          </form>
+          <input
+            value={adminSearch}
+            onChange={(event) => setAdminSearch(event.target.value)}
+            placeholder="Поиск по ID, имени или заметке"
+            className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-tgText placeholder:text-tgHint focus:border-white/30 focus:outline-none"
+          />
 
           <div className="flex flex-col gap-2">
             {adminsQuery.isLoading ? (
               <p className="text-sm text-tgHint">Загрузка администраторов...</p>
             ) : adminsQuery.isError ? (
               <p className="text-sm text-red-400">Не удалось загрузить администраторов.</p>
-            ) : adminList.length === 0 ? (
-              <p className="text-sm text-tgHint">Администраторы не найдены.</p>
+            ) : filteredAdminList.length === 0 ? (
+              <p className="text-sm text-tgHint">
+                {adminSearch ? 'По запросу ничего не найдено.' : 'Администраторы не найдены.'}
+              </p>
             ) : (
-              adminList.map((admin) => (
+              filteredAdminList.map((admin) => (
                 <div key={admin.id} className="flex flex-col gap-2 rounded-2xl bg-white/5 p-4">
                   <div className="flex items-center justify-between">
                     <div>
@@ -373,7 +547,7 @@ export function AdminDashboard() {
                     <div className="flex gap-2">
                       <button
                         type="button"
-                        onClick={() => setEditingAdmin(admin)}
+                        onClick={() => openAdminEditModal(admin)}
                         disabled={isBusy}
                         className="rounded-xl border border-white/20 px-3 py-1 text-sm disabled:opacity-60"
                       >
@@ -381,7 +555,13 @@ export function AdminDashboard() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => deleteAdminMutation.mutate(admin.id)}
+                        onClick={() =>
+                          setConfirmDelete({
+                            type: 'admin',
+                            id: admin.id,
+                            name: admin.displayName ?? admin.telegramId
+                          })
+                        }
                         disabled={isBusy}
                         className="rounded-xl bg-red-500/80 px-3 py-1 text-sm text-white disabled:opacity-60"
                       >
@@ -397,106 +577,33 @@ export function AdminDashboard() {
         </div>
       ) : (
         <div className="flex flex-col gap-4">
-          <form
-            onSubmit={handleUserSubmit}
-            className="flex flex-col gap-3 rounded-2xl bg-white/5 p-4"
+          <button
+            type="button"
+            onClick={openUserCreateModal}
+            className="flex flex-col gap-1 rounded-2xl bg-white/5 p-4 text-left transition-colors hover:bg-white/10"
           >
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">
-                {editingUser ? 'Редактирование пользователя' : 'Добавить пользователя'}
-              </h2>
-              {editingUser && (
-                <button
-                  type="button"
-                  onClick={() => setEditingUser(null)}
-                  className="text-sm text-tgHint"
-                >
-                  Отмена
-                </button>
-              )}
-            </div>
+            <span className="text-base font-semibold text-tgText">Добавить пользователя</span>
+            <span className="text-sm text-tgHint">Форма откроется в новом модальном окне.</span>
+          </button>
 
-            <label className="flex flex-col gap-1 text-sm">
-              telegramId
-              <input
-                {...userForm.register('telegramId')}
-                placeholder="123456789"
-                className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
-              />
-            </label>
-
-            <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
-              <label className="flex flex-col gap-1 text-sm">
-                Имя
-                <input
-                  {...userForm.register('firstName')}
-                  className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-sm">
-                Фамилия
-                <input
-                  {...userForm.register('lastName')}
-                  className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
-                />
-              </label>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
-              <label className="flex flex-col gap-1 text-sm">
-                Username
-                <input
-                  {...userForm.register('username')}
-                  placeholder="@username"
-                  className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-sm">
-                Телефон
-                <input
-                  {...userForm.register('phone')}
-                  placeholder="+7..."
-                  className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
-                />
-              </label>
-            </div>
-
-            <label className="flex flex-col gap-1 text-sm">
-              BIO
-              <textarea
-                {...userForm.register('bio')}
-                rows={3}
-                className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
-              />
-            </label>
-
-            <label className="flex flex-col gap-1 text-sm">
-              Язык
-              <input
-                {...userForm.register('languageCode')}
-                placeholder="ru"
-                className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
-              />
-            </label>
-
-            <button
-              type="submit"
-              disabled={isBusy}
-              className="mt-2 rounded-xl bg-tgButton px-4 py-2 text-sm font-semibold text-tgButtonText disabled:opacity-60"
-            >
-              {editingUser ? 'Сохранить' : 'Добавить'}
-            </button>
-          </form>
+          <input
+            value={userSearch}
+            onChange={(event) => setUserSearch(event.target.value)}
+            placeholder="Поиск по ID, имени, username или реквизитам"
+            className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-tgText placeholder:text-tgHint focus:border-white/30 focus:outline-none"
+          />
 
           <div className="flex flex-col gap-2">
             {usersQuery.isLoading ? (
               <p className="text-sm text-tgHint">Загрузка пользователей...</p>
             ) : usersQuery.isError ? (
               <p className="text-sm text-red-400">Не удалось загрузить пользователей.</p>
-            ) : userList.length === 0 ? (
-              <p className="text-sm text-tgHint">Пользователи не найдены.</p>
+            ) : filteredUserList.length === 0 ? (
+              <p className="text-sm text-tgHint">
+                {userSearch ? 'По запросу ничего не найдено.' : 'Пользователи не найдены.'}
+              </p>
             ) : (
-              userList.map((user) => (
+              filteredUserList.map((user) => (
                 <div key={user.id} className="flex flex-col gap-2 rounded-2xl bg-white/5 p-4">
                   <div className="flex items-center justify-between gap-2">
                     <div>
@@ -511,7 +618,7 @@ export function AdminDashboard() {
                     <div className="flex gap-2">
                       <button
                         type="button"
-                        onClick={() => setEditingUser(user)}
+                        onClick={() => openUserEditModal(user)}
                         disabled={isBusy}
                         className="rounded-xl border border-white/20 px-3 py-1 text-sm disabled:opacity-60"
                       >
@@ -519,7 +626,13 @@ export function AdminDashboard() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => deleteUserMutation.mutate(user.id)}
+                        onClick={() =>
+                          setConfirmDelete({
+                            type: 'user',
+                            id: user.id,
+                            name: user.firstName ?? user.username ?? user.telegramId
+                          })
+                        }
                         disabled={isBusy}
                         className="rounded-xl bg-red-500/80 px-3 py-1 text-sm text-white disabled:opacity-60"
                       >
@@ -528,12 +641,194 @@ export function AdminDashboard() {
                     </div>
                   </div>
                   {user.bio && <p className="text-sm text-tgHint">{user.bio}</p>}
+                  {user.payoutDetails && (
+                    <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-tgHint">
+                      <span className="text-tgText">Реквизиты:</span> {user.payoutDetails}
+                    </div>
+                  )}
                 </div>
               ))
             )}
           </div>
         </div>
       )}
+
+      <MobileModal
+        open={Boolean(adminModal)}
+        title={adminModal?.mode === 'edit' ? 'Редактирование администратора' : 'Новый администратор'}
+        onClose={closeAdminModal}
+      >
+        <form onSubmit={handleAdminSubmit} className="flex flex-col gap-3">
+          <label className="flex flex-col gap-1 text-sm">
+            telegramId <span className="text-xs text-tgHint">обязательно</span>
+            <input
+              {...adminForm.register('telegramId')}
+              placeholder="123456789"
+              className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
+            />
+          </label>
+
+          <label className="flex flex-col gap-1 text-sm">
+            Отображаемое имя <span className="text-xs text-tgHint">необязательно</span>
+            <input
+              {...adminForm.register('displayName')}
+              placeholder="Имя администратора"
+              className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
+            />
+          </label>
+
+          <label className="flex flex-col gap-1 text-sm">
+            Заметка <span className="text-xs text-tgHint">необязательно</span>
+            <textarea
+              {...adminForm.register('notes')}
+              rows={3}
+              className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
+            />
+          </label>
+
+          <button
+            type="submit"
+            disabled={isBusy}
+            className="mt-2 rounded-xl bg-tgButton px-4 py-2 text-sm font-semibold text-tgButtonText disabled:opacity-60"
+          >
+            {adminModal?.mode === 'edit' ? 'Сохранить' : 'Добавить'}
+          </button>
+        </form>
+      </MobileModal>
+
+      <MobileModal
+        open={Boolean(userModal)}
+        title={userModal?.mode === 'edit' ? 'Редактирование пользователя' : 'Новый пользователь'}
+        onClose={closeUserModal}
+      >
+        <form onSubmit={handleUserSubmit} className="flex flex-col gap-3">
+          {renderUserField(
+            'telegramId',
+            <input
+              {...userForm.register('telegramId')}
+              placeholder={USER_FIELD_PLACEHOLDERS.telegramId}
+              className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
+            />
+          )}
+
+          <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
+            {renderUserField(
+              'firstName',
+              <input
+                {...userForm.register('firstName')}
+                placeholder={USER_FIELD_PLACEHOLDERS.firstName}
+                className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
+              />
+            )}
+            {renderUserField(
+              'lastName',
+              <input
+                {...userForm.register('lastName')}
+                placeholder={USER_FIELD_PLACEHOLDERS.lastName}
+                className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
+              />
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
+            {renderUserField(
+              'username',
+              <input
+                {...userForm.register('username')}
+                placeholder={USER_FIELD_PLACEHOLDERS.username}
+                className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
+              />
+            )}
+            {renderUserField(
+              'phone',
+              <input
+                {...userForm.register('phone')}
+                placeholder={USER_FIELD_PLACEHOLDERS.phone}
+                className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
+              />
+            )}
+          </div>
+
+          {renderUserField(
+            'bio',
+            <textarea
+              {...userForm.register('bio')}
+              rows={3}
+              placeholder={USER_FIELD_PLACEHOLDERS.bio}
+              className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
+            />
+          )}
+
+          {renderUserField(
+            'languageCode',
+            <input
+              {...userForm.register('languageCode')}
+              placeholder={USER_FIELD_PLACEHOLDERS.languageCode}
+              className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
+            />
+          )}
+
+          {renderUserField(
+            'payoutDetails',
+            <textarea
+              {...userForm.register('payoutDetails')}
+              rows={3}
+              placeholder={USER_FIELD_PLACEHOLDERS.payoutDetails}
+              className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
+            />
+          )}
+
+          <button
+            type="submit"
+            disabled={isBusy}
+            className="mt-2 rounded-xl bg-tgButton px-4 py-2 text-sm font-semibold text-tgButtonText disabled:opacity-60"
+          >
+            {userModal?.mode === 'edit' ? 'Сохранить' : 'Добавить'}
+          </button>
+        </form>
+      </MobileModal>
+
+      <MobileModal
+        open={Boolean(helpTopic)}
+        title={helpTopic?.title ?? ''}
+        onClose={() => setHelpTopic(null)}
+      >
+        <p className="text-sm text-tgText">{helpTopic?.description}</p>
+        <p className="mt-4 text-xs text-tgHint">
+          {helpTopic?.required
+            ? 'Это поле обязательно для заполнения.'
+            : 'Это поле можно оставить пустым.'}
+        </p>
+      </MobileModal>
+
+      <MobileModal
+        open={Boolean(confirmDelete)}
+        title="Подтверждение удаления"
+        onClose={() => setConfirmDelete(null)}
+        footer={
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={handleConfirmDelete}
+              disabled={isBusy}
+              className="rounded-xl bg-red-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+            >
+              Удалить
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(null)}
+              className="rounded-xl border border-white/10 px-4 py-2 text-sm text-tgText"
+            >
+              Отмена
+            </button>
+          </div>
+        }
+      >
+        <p className="text-sm text-tgText">
+          Действительно удалить «{confirmDelete?.name}»? Это действие нельзя отменить.
+        </p>
+      </MobileModal>
     </section>
   );
 }

@@ -7,11 +7,10 @@ import { asyncHandler } from '../utils/asyncHandler';
 const router = Router();
 
 const updateProfileSchema = z.object({
-  firstName: z.string().optional(),
-  lastName: z.string().optional(),
-  username: z.string().optional(),
-  phone: z.string().optional(),
-  bio: z.string().optional()
+  payoutDetails: z
+    .string()
+    .max(2000, 'payoutDetails слишком длинные')
+    .optional()
 });
 
 router.get(
@@ -32,14 +31,16 @@ router.patch(
     const { user } = req.context!;
     const payload = updateProfileSchema.parse(req.body);
 
+    if (payload.payoutDetails === undefined) {
+      return res.status(400).json({ error: 'payoutDetails is required' });
+    }
+
+    const trimmed = payload.payoutDetails.trim();
+
     const updated = await prisma.user.update({
       where: { id: user.id },
       data: {
-        firstName: payload.firstName ?? null,
-        lastName: payload.lastName ?? null,
-        username: payload.username ?? null,
-        phone: payload.phone ?? null,
-        bio: payload.bio ?? null
+        payoutDetails: trimmed.length > 0 ? trimmed : null
       }
     });
 

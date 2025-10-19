@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
@@ -9,6 +9,20 @@ import { useSession } from '@/providers/SessionProvider';
 export function ProfilePage() {
   const { session } = useSession();
   const queryClient = useQueryClient();
+  const displayName = useMemo(() => {
+    if (!session) {
+      return '';
+    }
+
+    return (
+      session.user.firstName ??
+      session.user.username ??
+      session.telegramUser.first_name ??
+      session.user.telegramId
+    );
+  }, [session]);
+  const avatarUrl = session?.user.photoUrl ?? session?.telegramUser.photo_url ?? null;
+  const fallbackInitial = displayName ? displayName.slice(0, 1).toUpperCase() : '#';
   const {
     register,
     handleSubmit,
@@ -16,22 +30,14 @@ export function ProfilePage() {
     formState: { isDirty, isSubmitting }
   } = useForm<UpdateProfilePayload>({
     defaultValues: {
-      firstName: session?.user.firstName ?? undefined,
-      lastName: session?.user.lastName ?? undefined,
-      username: session?.user.username ?? undefined,
-      phone: session?.user.phone ?? undefined,
-      bio: session?.user.bio ?? undefined
+      payoutDetails: session?.user.payoutDetails ?? ''
     }
   });
 
   useEffect(() => {
     if (session?.user) {
       reset({
-        firstName: session.user.firstName ?? undefined,
-        lastName: session.user.lastName ?? undefined,
-        username: session.user.username ?? undefined,
-        phone: session.user.phone ?? undefined,
-        bio: session.user.bio ?? undefined
+        payoutDetails: session.user.payoutDetails ?? ''
       });
     }
   }, [reset, session?.user]);
@@ -48,7 +54,9 @@ export function ProfilePage() {
   });
 
   const onSubmit = handleSubmit(async (values) => {
-    await mutation.mutateAsync(values);
+    await mutation.mutateAsync({
+      payoutDetails: values.payoutDetails.trim()
+    });
   });
 
   if (!session) {
@@ -57,59 +65,40 @@ export function ProfilePage() {
 
   return (
     <section className="flex flex-col gap-4">
-      <div className="rounded-2xl bg-white/5 p-4">
-        <h2 className="text-lg font-semibold">Телеграм профиль</h2>
-        <p className="mt-2 text-sm text-tgHint">
-          @{session.user.username ?? session.telegramUser.username ?? 'не указан'}
-        </p>
-        <p className="text-sm text-tgHint">ID: {session.user.telegramId}</p>
+      <div className="flex items-center gap-3 rounded-2xl bg-white/5 p-4">
+        {avatarUrl ? (
+          <img
+            src={avatarUrl}
+            alt={displayName}
+            className="h-14 w-14 rounded-full border border-white/10 object-cover"
+          />
+        ) : (
+          <div className="flex h-14 w-14 items-center justify-center rounded-full border border-dashed border-white/10 bg-white/5 text-lg font-semibold">
+            {fallbackInitial}
+          </div>
+        )}
+        <div className="flex flex-col">
+          <span className="text-base font-semibold">{displayName}</span>
+          <span className="text-sm text-tgHint">
+            @{session.user.username ?? session.telegramUser.username ?? 'не указан'}
+          </span>
+          <span className="text-sm text-tgHint">ID: {session.user.telegramId}</span>
+        </div>
+      </div>
+
+      <div className="rounded-2xl bg-white/5 p-4 text-sm text-tgHint">
+        Данные профиля Telegram обновляются автоматически. Изменить их может только администратор.
       </div>
 
       <form onSubmit={onSubmit} className="flex flex-col gap-3 rounded-2xl bg-white/5 p-4">
-        <h2 className="text-lg font-semibold">Личная информация</h2>
+        <h2 className="text-lg font-semibold">Реквизиты для выплат</h2>
 
         <label className="flex flex-col gap-1 text-sm">
-          Имя
-          <input
-            {...register('firstName')}
-            placeholder="Введите имя"
-            className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
-          />
-        </label>
-
-        <label className="flex flex-col gap-1 text-sm">
-          Фамилия
-          <input
-            {...register('lastName')}
-            placeholder="Введите фамилию"
-            className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
-          />
-        </label>
-
-        <label className="flex flex-col gap-1 text-sm">
-          Username
-          <input
-            {...register('username')}
-            placeholder="@username"
-            className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
-          />
-        </label>
-
-        <label className="flex flex-col gap-1 text-sm">
-          Телефон
-          <input
-            {...register('phone')}
-            placeholder="+7..."
-            className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
-          />
-        </label>
-
-        <label className="flex flex-col gap-1 text-sm">
-          О себе
+          Укажите, куда перечислять выплаты
           <textarea
-            {...register('bio')}
-            rows={3}
-            placeholder="Краткое описание"
+            {...register('payoutDetails')}
+            rows={4}
+            placeholder="Напишите номер карты, криптокошелек или иные реквизиты"
             className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
           />
         </label>
