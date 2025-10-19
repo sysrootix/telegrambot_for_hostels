@@ -1,4 +1,5 @@
 import TelegramBot from 'node-telegram-bot-api';
+import type { Message } from 'node-telegram-bot-api';
 
 import { env } from './env';
 
@@ -13,7 +14,7 @@ export function getBot(): TelegramBot {
 
     botInstance.setMyCommands([{ command: 'start', description: 'Запуск веб-приложения' }]);
 
-    botInstance.onText(/\/start/, (msg) => {
+    botInstance.onText(/\/start/, (msg: Message) => {
       if (!msg.chat || !msg.chat.id) {
         return;
       }
