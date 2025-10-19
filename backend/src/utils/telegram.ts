@@ -21,7 +21,7 @@ export function verifyTelegramInitData(initData: string, botToken: string): bool
     .map(([key, value]) => `${key}=${value}`)
     .join('\n');
 
-  const secretKey = crypto.createHash('sha256').update(botToken).digest();
+  const secretKey = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
   const hmac = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
 
   return hmac === hash;
