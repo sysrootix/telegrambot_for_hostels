@@ -51,7 +51,7 @@ echo "📁 Деплой фронтенда в ${WEB_ROOT}..."
 mkdir -p "${WEB_ROOT}"
 rsync -a --delete frontend/dist/ "${WEB_ROOT}/"
 
-echo "🌱 Экспортируем переменные окружения backend (.env.production)..."
+echo "🌱 Экспортируем переменные окружения backend (.env)..."
 set -o allexport
 source <(sed -e 's/\r$//' "${BACKEND_ENV_FILE}")
 set +o allexport
