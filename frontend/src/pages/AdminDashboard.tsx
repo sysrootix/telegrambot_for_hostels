@@ -55,16 +55,36 @@ const userDefaultValues: UserFormValues = {
   payoutDetails: ''
 };
 
-interface HelpTopic {
-  title: string;
-  description: string;
+interface FieldMeta {
+  label: string;
   required: boolean;
+  description: string;
 }
 
-const USER_FIELD_META: Record<
-  keyof UserFormValues,
-  { label: string; required: boolean; description: string }
-> = {
+type HelpTopic = FieldMeta;
+
+const ADMIN_FIELD_META: Record<keyof AdminFormValues, FieldMeta> = {
+  telegramId: {
+    label: 'telegramId',
+    required: true,
+    description:
+      'Уникальный идентификатор администратора в Telegram. Узнайте его через бота @getmyid_bot или другими инструментами.'
+  },
+  displayName: {
+    label: 'Отображаемое имя',
+    required: false,
+    description:
+      'Имя, которое будет показываться в панели администрирования. Можно оставить пустым, тогда будет использоваться telegramId.'
+  },
+  notes: {
+    label: 'Заметка',
+    required: false,
+    description:
+      'Любые комментарии об администраторе (например, его роль или смены). Видно только другим администраторам.'
+  }
+};
+
+const USER_FIELD_META: Record<keyof UserFormValues, FieldMeta> = {
   telegramId: {
     label: 'telegramId',
     required: true,
@@ -341,13 +361,8 @@ export function AdminDashboard() {
     userForm.reset(userDefaultValues);
   };
 
-  const openHelp = (field: keyof UserFormValues) => {
-    const meta = USER_FIELD_META[field];
-    setHelpTopic({
-      title: meta.label,
-      description: meta.description,
-      required: meta.required
-    });
+  const openHelp = (meta: FieldMeta) => {
+    setHelpTopic(meta);
   };
 
   const handleAdminSubmit = adminForm.handleSubmit(async (values) => {
@@ -464,11 +479,9 @@ export function AdminDashboard() {
     }
   };
 
-  const renderUserField = (field: keyof UserFormValues, input: React.ReactNode) => {
-    const meta = USER_FIELD_META[field];
-
+  const renderField = (meta: FieldMeta, key: string, input: React.ReactNode) => {
     return (
-      <label key={field as string} className="flex flex-col gap-1 text-sm">
+      <label key={key} className="flex flex-col gap-1 text-sm">
         <span className="flex items-center justify-between gap-2">
           <span className="flex items-baseline gap-2 text-sm font-medium text-tgText">
             {meta.label}
@@ -478,7 +491,7 @@ export function AdminDashboard() {
           </span>
           <button
             type="button"
-            onClick={() => openHelp(field)}
+            onClick={() => openHelp(meta)}
             className="flex h-7 w-7 items-center justify-center rounded-full border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.16))] bg-[color:var(--tg-theme-section-bg-color,rgba(255,255,255,0.06))] text-xs text-tgHint transition-colors hover:border-[color:var(--tg-theme-accent-text-color,#5aa7ff)] hover:text-tgAccent"
           >
             ?
@@ -488,6 +501,12 @@ export function AdminDashboard() {
       </label>
     );
   };
+
+  const renderUserField = (field: keyof UserFormValues, input: React.ReactNode) =>
+    renderField(USER_FIELD_META[field], field, input);
+
+  const renderAdminField = (field: keyof AdminFormValues, input: React.ReactNode) =>
+    renderField(ADMIN_FIELD_META[field], field, input);
 
   return (
     <section className="flex flex-col gap-6">
@@ -662,32 +681,32 @@ export function AdminDashboard() {
         onClose={closeAdminModal}
       >
         <form onSubmit={handleAdminSubmit} className="flex flex-col gap-3">
-          <label className="flex flex-col gap-1 text-sm">
-            telegramId <span className="text-xs text-tgHint">обязательно</span>
+          {renderAdminField(
+            'telegramId',
             <input
               {...adminForm.register('telegramId')}
               placeholder="123456789"
               className={modalInputClass}
             />
-          </label>
+          )}
 
-          <label className="flex flex-col gap-1 text-sm">
-            Отображаемое имя <span className="text-xs text-tgHint">необязательно</span>
+          {renderAdminField(
+            'displayName',
             <input
               {...adminForm.register('displayName')}
               placeholder="Имя администратора"
               className={modalInputClass}
             />
-          </label>
+          )}
 
-          <label className="flex flex-col gap-1 text-sm">
-            Заметка <span className="text-xs text-tgHint">необязательно</span>
+          {renderAdminField(
+            'notes',
             <textarea
               {...adminForm.register('notes')}
               rows={3}
               className={`${modalInputClass} min-h-[96px]`}
             />
-          </label>
+          )}
 
           <button
             type="submit"
