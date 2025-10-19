@@ -85,6 +85,39 @@ VITE_API_BASE_URL=/api
 ## Тестирование
 Тесты пока не реализованы. Перед деплоем стоит добавить модульные тесты для сервисов и компонента админ-панели.
 
+## Продакшен деплой (кратко)
+1. На сервере подтянуть изменения:
+   ```bash
+   cd /path/to/telegrambot_for_hostels
+   ./scripts/git-pull.sh
+   ```
+2. Установить зависимости и собрать:
+   ```bash
+   npm install
+   npm run build
+   ```
+3. Задеплоить фронтенд в `/var/www/bot-helper-for-hostel/frontend` (путь указан в nginx конфиге) и запустить backend через PM2:
+   ```bash
+   mkdir -p /var/www/bot-helper-for-hostel/frontend
+   cp -r frontend/dist/* /var/www/bot-helper-for-hostel/frontend/
+   pm2 start backend/dist/server.js --name hostel-bot-backend
+   pm2 save
+   ```
+4. Настроить nginx. Пример лежит в `deploy/nginx/bot.sysrootix.com.conf`. Скопируйте файл в `/etc/nginx/sites-available/`, создайте симлинк в `sites-enabled` и перезапустите nginx:
+   ```bash
+   sudo mkdir -p /var/www/letsencrypt
+   sudo cp deploy/nginx/bot.sysrootix.com.conf /etc/nginx/sites-available/bot.sysrootix.com.conf
+   sudo ln -s /etc/nginx/sites-available/bot.sysrootix.com.conf /etc/nginx/sites-enabled/
+   sudo nginx -t
+   sudo systemctl reload nginx
+   ```
+5. Выпустить сертификаты Let’s Encrypt (пример для certbot):
+   ```bash
+   sudo certbot certonly --nginx -d bot.sysrootix.com
+   sudo systemctl reload nginx
+   ```
+6. Проверьте, что WebApp открывается по `https://bot.sysrootix.com`, а API отвечает на `https://bot.sysrootix.com/api/health`.
+
 ## Дальшие шаги
 - Настроить полноценную авторизацию (JWT / сессии по initData).
 - Добавить остальные разделы WebApp (например, заявок, бронирований и т.д.).
