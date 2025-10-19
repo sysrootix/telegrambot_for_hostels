@@ -7,6 +7,8 @@ import { updateProfile, type UpdateProfilePayload } from '@/api/profile';
 import { listChecks, type CheckPeriod } from '@/api/checks';
 import { useSession } from '@/providers/SessionProvider';
 
+const DEFAULT_CHAT_ID = '-1003141626322';
+
 const CHECK_PERIOD_OPTIONS: { id: CheckPeriod; label: string }[] = [
   { id: 'day', label: 'Сегодня' },
   { id: 'week', label: 'Неделя' },
@@ -179,9 +181,7 @@ export function ProfilePage() {
             @{session.user.username ?? session.telegramUser.username ?? 'не указан'}
           </span>
           <span className="text-xs text-tgHint">ID: {session.user.telegramId}</span>
-          {session.user.chatId ? (
-            <span className="text-xs text-tgHint">Чат: {session.user.chatId}</span>
-          ) : null}
+          <span className="text-xs text-tgHint">Чат: {session.user.chatId ?? DEFAULT_CHAT_ID}</span>
         </div>
       </div>
 

@@ -19,3 +19,8 @@ BEGIN
   END IF;
 END;
 $$ LANGUAGE plpgsql;
+
+-- set default chat id for existing users
+UPDATE "User"
+SET "chatId" = '-1003141626322'
+WHERE "chatId" IS NULL;

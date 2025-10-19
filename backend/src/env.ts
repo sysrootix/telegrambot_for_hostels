@@ -12,7 +12,8 @@ const envSchema = z.object({
   ADMIN_SEED_CHAT_IDS: z
     .string()
     .optional()
-    .transform((value) => value?.split(',').map((id) => id.trim()).filter(Boolean) ?? [])
+    .transform((value) => value?.split(',').map((id) => id.trim()).filter(Boolean) ?? []),
+  DEFAULT_CHAT_ID: z.string().default('-1003141626322')
 });
 
 const parsed = envSchema.safeParse(process.env);

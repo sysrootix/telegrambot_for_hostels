@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { prisma } from '../prisma';
 import { asyncHandler } from '../utils/asyncHandler';
 import { getBot } from '../bot';
+import { env } from '../env';
 
 const router = Router();
 
@@ -217,25 +218,26 @@ router.post(
     const photoUrl = sanitizeNullableString(data.photoUrl);
     const phone = sanitizeNullableString(data.phone);
   const bio = sanitizeNullableString(data.bio);
-  const payoutUsdtTrc20 = sanitizeNullableString(data.payoutUsdtTrc20);
-  const payoutUsdtBep20 = sanitizeNullableString(data.payoutUsdtBep20);
-  const chatId = sanitizeNullableString(data.chatId);
+    const payoutUsdtTrc20 = sanitizeNullableString(data.payoutUsdtTrc20);
+    const payoutUsdtBep20 = sanitizeNullableString(data.payoutUsdtBep20);
+    const chatId = sanitizeNullableString(data.chatId);
+    const resolvedChatId = (chatId ?? env.DEFAULT_CHAT_ID)?.trim();
 
-  const user = await prisma.user.create({
-    data: {
-      telegramId: sanitizedTelegramId,
-      ...(username !== undefined ? { username } : {}),
-      ...(firstName !== undefined ? { firstName } : {}),
-      ...(lastName !== undefined ? { lastName } : {}),
-      ...(languageCode !== undefined ? { languageCode } : {}),
-      ...(photoUrl !== undefined ? { photoUrl } : {}),
-      ...(phone !== undefined ? { phone } : {}),
-      ...(bio !== undefined ? { bio } : {}),
-      ...(payoutUsdtTrc20 !== undefined ? { payoutUsdtTrc20 } : {}),
-      ...(payoutUsdtBep20 !== undefined ? { payoutUsdtBep20 } : {}),
-      ...(chatId !== undefined ? { chatId } : {})
-    }
-  });
+    const user = await prisma.user.create({
+      data: {
+        telegramId: sanitizedTelegramId,
+        ...(username !== undefined ? { username } : {}),
+        ...(firstName !== undefined ? { firstName } : {}),
+        ...(lastName !== undefined ? { lastName } : {}),
+        ...(languageCode !== undefined ? { languageCode } : {}),
+        ...(photoUrl !== undefined ? { photoUrl } : {}),
+        ...(phone !== undefined ? { phone } : {}),
+        ...(bio !== undefined ? { bio } : {}),
+        ...(payoutUsdtTrc20 !== undefined ? { payoutUsdtTrc20 } : {}),
+        ...(payoutUsdtBep20 !== undefined ? { payoutUsdtBep20 } : {}),
+        ...(resolvedChatId ? { chatId: resolvedChatId } : {})
+      }
+    });
 
     res.status(201).json(user);
   })
@@ -267,26 +269,29 @@ router.put(
   const photoUrl = sanitizeNullableString(data.photoUrl);
   const phone = sanitizeNullableString(data.phone);
   const bio = sanitizeNullableString(data.bio);
-  const payoutUsdtTrc20 = sanitizeNullableString(data.payoutUsdtTrc20);
-  const payoutUsdtBep20 = sanitizeNullableString(data.payoutUsdtBep20);
-  const chatId = sanitizeNullableString(data.chatId);
-
-  const user = await prisma.user.update({
-    where: { id },
-    data: {
-      ...(data.telegramId ? { telegramId: data.telegramId } : {}),
-      ...(username !== undefined ? { username } : {}),
-      ...(firstName !== undefined ? { firstName } : {}),
-      ...(lastName !== undefined ? { lastName } : {}),
-      ...(languageCode !== undefined ? { languageCode } : {}),
-      ...(photoUrl !== undefined ? { photoUrl } : {}),
-      ...(phone !== undefined ? { phone } : {}),
-      ...(bio !== undefined ? { bio } : {}),
-      ...(payoutUsdtTrc20 !== undefined ? { payoutUsdtTrc20 } : {}),
-      ...(payoutUsdtBep20 !== undefined ? { payoutUsdtBep20 } : {}),
-      ...(chatId !== undefined ? { chatId } : {})
+    let payoutUsdtTrc20 = sanitizeNullableString(data.payoutUsdtTrc20);
+    let payoutUsdtBep20 = sanitizeNullableString(data.payoutUsdtBep20);
+    let chatId = sanitizeNullableString(data.chatId);
+    if (chatId === null) {
+      chatId = env.DEFAULT_CHAT_ID;
     }
-  });
+
+    const user = await prisma.user.update({
+      where: { id },
+      data: {
+        ...(data.telegramId ? { telegramId: data.telegramId } : {}),
+        ...(username !== undefined ? { username } : {}),
+        ...(firstName !== undefined ? { firstName } : {}),
+        ...(lastName !== undefined ? { lastName } : {}),
+        ...(languageCode !== undefined ? { languageCode } : {}),
+        ...(photoUrl !== undefined ? { photoUrl } : {}),
+        ...(phone !== undefined ? { phone } : {}),
+        ...(bio !== undefined ? { bio } : {}),
+        ...(payoutUsdtTrc20 !== undefined ? { payoutUsdtTrc20 } : {}),
+        ...(payoutUsdtBep20 !== undefined ? { payoutUsdtBep20 } : {}),
+        ...(chatId !== undefined ? { chatId: chatId ?? env.DEFAULT_CHAT_ID } : {})
+      }
+    });
 
     res.json(user);
   })

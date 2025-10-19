@@ -51,6 +51,13 @@ export async function telegramAuth(req: Request, res: Response, next: NextFuncti
       where: { telegramId }
     });
 
+    if (!userRecord.chatId) {
+      userRecord = await prisma.user.update({
+        where: { id: userRecord.id },
+        data: { chatId: env.DEFAULT_CHAT_ID }
+      });
+    }
+
     if (userRecord.mutedUntil && userRecord.mutedUntil.getTime() < Date.now()) {
       userRecord = await prisma.user.update({
         where: { id: userRecord.id },

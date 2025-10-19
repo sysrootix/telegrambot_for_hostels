@@ -34,6 +34,8 @@ import {
 import { useSession } from '@/providers/SessionProvider';
 import type { ApiAdmin, ApiCheck, ApiUser, ChecksSummaryRow } from '@/types/api';
 
+const DEFAULT_CHAT_ID = '-1003141626322';
+
 type AdminFormValues = {
   telegramId: string;
   displayName: string;
@@ -69,7 +71,7 @@ const userDefaultValues: UserFormValues = {
   languageCode: '',
   payoutUsdtTrc20: '',
   payoutUsdtBep20: '',
-  chatId: ''
+  chatId: DEFAULT_CHAT_ID
 };
 
 interface FieldMeta {
@@ -524,7 +526,7 @@ export function AdminDashboard() {
   const adminList = useMemo(() => adminsQuery.data ?? [], [adminsQuery.data]);
   const userList = useMemo(() => usersQuery.data ?? [], [usersQuery.data]);
   const selectedUser = userModal?.entity ?? null;
-  const canModerateSelectedUser = Boolean(selectedUser?.chatId);
+  const canModerateSelectedUser = Boolean((selectedUser?.chatId ?? DEFAULT_CHAT_ID).trim());
   const filteredAdminList = useMemo(() => {
     const query = adminSearch.trim().toLowerCase();
 
@@ -733,7 +735,7 @@ export function AdminDashboard() {
       id: userModal.entity.id,
       payload: {
         durationMinutes: minutes,
-        chatId: userModal.entity.chatId ?? undefined
+        chatId: userModal.entity.chatId ?? DEFAULT_CHAT_ID
       }
     });
   };
@@ -746,7 +748,7 @@ export function AdminDashboard() {
     await unmuteUserMutation.mutateAsync({
       id: userModal.entity.id,
       payload: {
-        chatId: userModal.entity.chatId ?? undefined
+        chatId: userModal.entity.chatId ?? DEFAULT_CHAT_ID
       }
     });
   };
@@ -762,7 +764,7 @@ export function AdminDashboard() {
       await blockUserMutation.mutateAsync({
         id: userModal.entity.id,
         payload: {
-          chatId: userModal.entity.chatId ?? undefined,
+          chatId: userModal.entity.chatId ?? DEFAULT_CHAT_ID,
           reason: reason?.trim() ? reason.trim() : undefined
         }
       });
@@ -770,7 +772,7 @@ export function AdminDashboard() {
       await unblockUserMutation.mutateAsync({
         id: userModal.entity.id,
         payload: {
-          chatId: userModal.entity.chatId ?? undefined
+          chatId: userModal.entity.chatId ?? DEFAULT_CHAT_ID
         }
       });
     }
@@ -1209,6 +1211,9 @@ export function AdminDashboard() {
                         @{user.username ?? 'без username'}
                       </p>
                       <p className="text-sm text-tgHint">ID: {user.telegramId}</p>
+                      <p className="text-xs text-tgHint">
+                        Chat ID: {user.chatId ?? DEFAULT_CHAT_ID}
+                      </p>
                       {user.isBlocked ? (
                         <p className="text-xs text-red-400">Заблокирован</p>
                       ) : user.mutedUntil ? (
@@ -1425,24 +1430,24 @@ export function AdminDashboard() {
           </button>
           </form>
 
-          {userModal?.mode === 'edit' && selectedUser ? (
-            <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] bg-[color:var(--tg-theme-section-bg-color,rgba(255,255,255,0.05))] p-4">
-              <div className="flex flex-col gap-1">
-                <h3 className="text-sm font-semibold text-tgText">Модерация</h3>
-                <p className="text-xs text-tgHint">
-                  {selectedUser.mutedUntil
-                    ? `Ограничение действует до ${dateTimeFormatter.format(new Date(selectedUser.mutedUntil))}`
-                    : 'Отправка сообщений разрешена.'}
-                </p>
-                <p className="text-xs text-tgHint">
-                  {selectedUser.isBlocked
-                    ? `Статус: заблокирован${selectedUser.blockReason ? ` (${selectedUser.blockReason})` : ''}.`
-                    : 'Статус: активен.'}
-                </p>
-                {!canModerateSelectedUser ? (
-                  <p className="text-xs text-red-300">Укажите Chat ID, чтобы применять ограничения.</p>
-                ) : null}
-              </div>
+      {userModal?.mode === 'edit' && selectedUser ? (
+        <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] bg-[color:var(--tg-theme-section-bg-color,rgba(255,255,255,0.05))] p-4">
+          <div className="flex flex-col gap-1">
+            <h3 className="text-sm font-semibold text-tgText">Модерация</h3>
+            <p className="text-xs text-tgHint">
+              {selectedUser.mutedUntil
+                ? `Ограничение действует до ${dateTimeFormatter.format(new Date(selectedUser.mutedUntil))}`
+                : 'Отправка сообщений разрешена.'}
+            </p>
+            <p className="text-xs text-tgHint">
+              {selectedUser.isBlocked
+                ? `Статус: заблокирован${selectedUser.blockReason ? ` (${selectedUser.blockReason})` : ''}.`
+                : 'Статус: активен.'}
+            </p>
+            {!canModerateSelectedUser ? (
+              <p className="text-xs text-red-300">Укажите Chat ID, чтобы применять ограничения.</p>
+            ) : null}
+          </div>
 
               <div className="flex flex-wrap gap-2">
                 {MUTE_OPTIONS.map((option) => (
@@ -1478,8 +1483,8 @@ export function AdminDashboard() {
               >
                 {selectedUser.isBlocked ? 'Разблокировать' : 'Заблокировать'}
               </button>
-            </div>
-          ) : null}
+        </div>
+      ) : null}
         </>
       </MobileModal>
 
