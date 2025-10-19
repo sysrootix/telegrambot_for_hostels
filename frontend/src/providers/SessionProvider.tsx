@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
-import { createContext, useContext, useEffect } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import type { AxiosError } from 'axios';
 
 import { fetchSession } from '@/api/auth';
 import { useSessionStore } from '@/store/sessionStore';
@@ -13,6 +14,7 @@ interface SessionContextValue {
   error: unknown;
   initData: string | null;
   refetch: () => void;
+  blockedInfo: { title: string; reason: string | null } | null;
 }
 
 const SessionContext = createContext<SessionContextValue | undefined>(undefined);
@@ -21,6 +23,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const initData = useInitData();
   const session = useSessionStore((state) => state.session);
   const setSession = useSessionStore((state) => state.setSession);
+  const [blockedInfo, setBlockedInfo] = useState<{ title: string; reason: string | null } | null>(null);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['session', initData],
@@ -32,21 +35,32 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (data) {
       setSession(data);
+      setBlockedInfo(null);
     }
   }, [data, setSession]);
 
   useEffect(() => {
     if (isError) {
       setSession(null);
+      const axiosError = error as AxiosError<{ error?: string; reason?: string; blocked?: boolean }>;
+      if (axiosError?.response?.status === 403 && axiosError.response.data?.blocked) {
+        setBlockedInfo({
+          title: axiosError.response.data.error ?? 'Доступ запрещен',
+          reason: axiosError.response.data.reason ?? null
+        });
+      } else {
+        setBlockedInfo(null);
+      }
     }
-  }, [isError, setSession]);
+  }, [error, isError, setSession]);
 
   const value: SessionContextValue = {
     session,
     isLoading: Boolean(initData) ? isLoading : false,
     error: Boolean(initData) ? error : null,
     initData,
-    refetch
+    refetch,
+    blockedInfo
   };
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

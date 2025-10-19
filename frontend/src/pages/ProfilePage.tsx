@@ -14,6 +14,17 @@ const CHECK_PERIOD_OPTIONS: { id: CheckPeriod; label: string }[] = [
   { id: 'custom', label: 'Период' }
 ];
 
+const PROFILE_TABS: { id: 'profile' | 'settings' | 'checks'; label: string }[] = [
+  { id: 'profile', label: 'Профиль' },
+  { id: 'settings', label: 'Настройки' },
+  { id: 'checks', label: 'Чеки' }
+];
+
+type SettingsFormValues = {
+  payoutUsdtTrc20: string;
+  payoutUsdtBep20: string;
+};
+
 const currencyFormatter = new Intl.NumberFormat('ru-RU', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2
@@ -30,6 +41,7 @@ const checkDateFormatter = new Intl.DateTimeFormat('ru-RU', {
 export function ProfilePage() {
   const { session } = useSession();
   const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState<'profile' | 'settings' | 'checks'>('profile');
   const [checksPeriod, setChecksPeriod] = useState<CheckPeriod>('month');
   const [customRange, setCustomRange] = useState<{ start: string; end: string }>({
     start: '',
@@ -55,9 +67,10 @@ export function ProfilePage() {
     handleSubmit,
     reset,
     formState: { isDirty, isSubmitting }
-  } = useForm<UpdateProfilePayload>({
+  } = useForm<SettingsFormValues>({
     defaultValues: {
-      payoutDetails: session?.user.payoutDetails ?? ''
+      payoutUsdtTrc20: session?.user.payoutUsdtTrc20 ?? '',
+      payoutUsdtBep20: session?.user.payoutUsdtBep20 ?? ''
     }
   });
 
@@ -73,7 +86,11 @@ export function ProfilePage() {
 
       return listChecks({ period: checksPeriod });
     },
-    enabled: Boolean(session)
+    enabled:
+      Boolean(session) &&
+      activeTab === 'checks' &&
+      (checksPeriod !== 'custom' || Boolean(customRange.start || customRange.end)),
+    staleTime: 1000 * 60
   });
 
   const myChecks = useMemo(() => checksQuery.data ?? [], [checksQuery.data]);
@@ -85,7 +102,7 @@ export function ProfilePage() {
     };
   }, [myChecks]);
 
-  const formatAmount = (value: number) => `${currencyFormatter.format(value)} ₽`;
+  const formatAmount = (value: number) => `${currencyFormatter.format(value)} AED`;
   const formatCheckDate = (value: string) => checkDateFormatter.format(new Date(value));
 
   const handlePeriodChange = (period: CheckPeriod) => {
@@ -109,7 +126,8 @@ export function ProfilePage() {
   useEffect(() => {
     if (session?.user) {
       reset({
-        payoutDetails: session.user.payoutDetails ?? ''
+        payoutUsdtTrc20: session.user.payoutUsdtTrc20 ?? '',
+        payoutUsdtBep20: session.user.payoutUsdtBep20 ?? ''
       });
     }
   }, [reset, session?.user]);
@@ -126,9 +144,15 @@ export function ProfilePage() {
   });
 
   const onSubmit = handleSubmit(async (values) => {
-    await mutation.mutateAsync({
-      payoutDetails: values.payoutDetails.trim()
-    });
+    const payload: UpdateProfilePayload = {};
+
+    const trc = values.payoutUsdtTrc20.trim();
+    const bep = values.payoutUsdtBep20.trim();
+
+    payload.payoutUsdtTrc20 = trc.length > 0 ? trc : '';
+    payload.payoutUsdtBep20 = bep.length > 0 ? bep : '';
+
+    await mutation.mutateAsync(payload);
   });
 
   if (!session) {
@@ -142,10 +166,10 @@ export function ProfilePage() {
           <img
             src={avatarUrl}
             alt={displayName}
-            className="h-14 w-14 rounded-full border border-white/10 object-cover"
+            className="h-16 w-16 rounded-full border border-white/10 object-cover"
           />
         ) : (
-          <div className="flex h-14 w-14 items-center justify-center rounded-full border border-dashed border-white/10 bg-white/5 text-lg font-semibold">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full border border-dashed border-white/10 bg-white/5 text-xl font-semibold">
             {fallbackInitial}
           </div>
         )}
@@ -154,101 +178,152 @@ export function ProfilePage() {
           <span className="text-sm text-tgHint">
             @{session.user.username ?? session.telegramUser.username ?? 'не указан'}
           </span>
-          <span className="text-sm text-tgHint">ID: {session.user.telegramId}</span>
+          <span className="text-xs text-tgHint">ID: {session.user.telegramId}</span>
+          {session.user.chatId ? (
+            <span className="text-xs text-tgHint">Чат: {session.user.chatId}</span>
+          ) : null}
         </div>
       </div>
 
-      <div className="rounded-2xl bg-white/5 p-4 text-sm text-tgHint">
-        Данные профиля Telegram обновляются автоматически. Изменить их может только администратор.
+      <div className="flex gap-2 overflow-x-auto rounded-2xl bg-white/5 p-2">
+        {PROFILE_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex-1 min-w-[120px] rounded-xl px-3 py-2 text-sm font-medium transition-colors ${
+              activeTab === tab.id ? 'bg-tgButton text-tgButtonText' : 'text-tgHint'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
-      <form onSubmit={onSubmit} className="flex flex-col gap-3 rounded-2xl bg-white/5 p-4">
-        <h2 className="text-lg font-semibold">Реквизиты для выплат</h2>
-
-        <label className="flex flex-col gap-1 text-sm">
-          Укажите, куда перечислять выплаты
-          <textarea
-            {...register('payoutDetails')}
-            rows={4}
-            placeholder="Напишите номер карты, криптокошелек или иные реквизиты"
-            className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
-          />
-        </label>
-
-      <button
-        type="submit"
-        disabled={!isDirty || isSubmitting}
-        className="mt-2 rounded-xl bg-tgButton px-4 py-2 text-sm font-semibold text-tgButtonText disabled:opacity-60"
-      >
-        Сохранить
-      </button>
-    </form>
-
-      <section className="flex flex-col gap-3 rounded-2xl bg-white/5 p-4">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-lg font-semibold">Мои чеки</h2>
-          <span className="text-xs text-tgHint">
-            {myChecksTotals.count} шт · {formatAmount(myChecksTotals.total)}
-          </span>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          {CHECK_PERIOD_OPTIONS.map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              onClick={() => handlePeriodChange(option.id)}
-              className={`rounded-xl px-3 py-1 text-sm font-medium transition-colors ${
-                checksPeriod === option.id
-                  ? 'bg-tgButton text-tgButtonText'
-                  : 'border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] bg-[color:var(--tg-theme-section-bg-color,rgba(255,255,255,0.05))] text-tgHint'
-              }`}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-
-        {checksPeriod === 'custom' && (
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              type="date"
-              value={customRange.start}
-              onChange={(event) => handleCustomRangeChange('start', event.target.value)}
-              className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-tgText focus:border-white/30 focus:outline-none"
-            />
-            <input
-              type="date"
-              value={customRange.end}
-              onChange={(event) => handleCustomRangeChange('end', event.target.value)}
-              className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-tgText focus:border-white/30 focus:outline-none"
-            />
+      {activeTab === 'profile' ? (
+        <div className="flex flex-col gap-3 rounded-2xl bg-white/5 p-4 text-sm text-tgHint">
+          <div>
+            <span className="text-xs uppercase tracking-wide text-tgHint">Telegram</span>
+            <p className="text-base text-tgText">
+              @{session.user.username ?? session.telegramUser.username ?? 'не указан'}
+            </p>
           </div>
-        )}
-
-        <div className="flex flex-col gap-2">
-          {checksQuery.isLoading ? (
-            <p className="text-sm text-tgHint">Загрузка чеков...</p>
-          ) : checksQuery.isError ? (
-            <p className="text-sm text-red-400">Не удалось загрузить чеки.</p>
-          ) : myChecks.length === 0 ? (
-            <p className="text-sm text-tgHint">Чеки не найдены.</p>
+          {session.user.isBlocked ? (
+            <div className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
+              Аккаунт заблокирован.
+              {session.user.blockReason ? ` Причина: ${session.user.blockReason}.` : ''}
+            </div>
+          ) : null}
+          {session.user.mutedUntil ? (
+            <div className="rounded-xl border border-yellow-500/40 bg-yellow-500/10 p-3 text-sm text-yellow-200">
+              Ограничение на отправку сообщений действует до{' '}
+              {formatCheckDate(session.user.mutedUntil)}.
+            </div>
           ) : (
-            myChecks.map((check) => (
-              <div
-                key={check.id}
-                className="flex flex-col gap-1 rounded-2xl border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] bg-[color:var(--tg-theme-section-bg-color,rgba(255,255,255,0.05))] p-3"
-              >
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-base font-semibold text-tgText">{formatAmount(check.amount)}</span>
-                  <span className="text-xs text-tgHint">{formatCheckDate(check.createdAt)}</span>
-                </div>
-                {check.note && <p className="text-xs text-tgHint">{check.note}</p>}
-              </div>
-            ))
+            <p className="text-xs text-tgHint">Сообщений в чате без ограничений.</p>
           )}
         </div>
-      </section>
+      ) : null}
+
+      {activeTab === 'settings' ? (
+        <form onSubmit={onSubmit} className="flex flex-col gap-3 rounded-2xl bg-white/5 p-4">
+          <h2 className="text-lg font-semibold">Настройки выплат</h2>
+
+          <label className="flex flex-col gap-1 text-sm">
+            USDT (TRC-20)
+            <input
+              {...register('payoutUsdtTrc20')}
+              placeholder="Введите адрес кошелька TRC-20"
+              className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
+            />
+          </label>
+
+          <label className="flex flex-col gap-1 text-sm">
+            USDT (BEP-20)
+            <input
+              {...register('payoutUsdtBep20')}
+              placeholder="Введите адрес кошелька BEP-20"
+              className="rounded-xl border border-white/10 bg-transparent px-3 py-2 text-base text-tgText"
+            />
+          </label>
+
+          <button
+            type="submit"
+            disabled={!isDirty || isSubmitting}
+            className="mt-2 rounded-xl bg-tgButton px-4 py-2 text-sm font-semibold text-tgButtonText disabled:opacity-60"
+          >
+            Сохранить
+          </button>
+        </form>
+      ) : null}
+
+      {activeTab === 'checks' ? (
+        <section className="flex flex-col gap-3 rounded-2xl bg-white/5 p-4">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-lg font-semibold">Мои чеки</h2>
+            <span className="text-xs text-tgHint">
+              {myChecksTotals.count} шт · {formatAmount(myChecksTotals.total)}
+            </span>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {CHECK_PERIOD_OPTIONS.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => handlePeriodChange(option.id)}
+                className={`rounded-xl px-3 py-1 text-sm font-medium transition-colors ${
+                  checksPeriod === option.id
+                    ? 'bg-tgButton text-tgButtonText'
+                    : 'border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] bg-[color:var(--tg-theme-section-bg-color,rgba(255,255,255,0.05))] text-tgHint'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+
+          {checksPeriod === 'custom' && (
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                type="date"
+                value={customRange.start}
+                onChange={(event) => handleCustomRangeChange('start', event.target.value)}
+                className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-tgText focus:border-white/30 focus:outline-none"
+              />
+              <input
+                type="date"
+                value={customRange.end}
+                onChange={(event) => handleCustomRangeChange('end', event.target.value)}
+                className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-tgText focus:border-white/30 focus:outline-none"
+              />
+            </div>
+          )}
+
+          <div className="flex flex-col gap-2">
+            {checksQuery.isLoading ? (
+              <p className="text-sm text-tgHint">Загрузка чеков...</p>
+            ) : checksQuery.isError ? (
+              <p className="text-sm text-red-400">Не удалось загрузить чеки.</p>
+            ) : myChecks.length === 0 ? (
+              <p className="text-sm text-tgHint">Чеки не найдены.</p>
+            ) : (
+              myChecks.map((check) => (
+                <div
+                  key={check.id}
+                  className="flex flex-col gap-1 rounded-2xl border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] bg-[color:var(--tg-theme-section-bg-color,rgba(255,255,255,0.05))] p-3"
+                >
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-base font-semibold text-tgText">{formatAmount(check.amount)}</span>
+                    <span className="text-xs text-tgHint">{formatCheckDate(check.createdAt)}</span>
+                  </div>
+                  {check.note && <p className="text-xs text-tgHint">{check.note}</p>}
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+      ) : null}
     </section>
   );
 }

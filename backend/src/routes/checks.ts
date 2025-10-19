@@ -174,11 +174,11 @@ router.get(
     let targetUserId: string;
 
     if (isAdmin) {
-      if (!query.userId) {
-        return res.status(400).json({ error: 'userId обязателен для администратора' });
+      if (query.userId && query.userId !== 'me') {
+        targetUserId = query.userId;
+      } else {
+        targetUserId = user.id;
       }
-
-      targetUserId = query.userId;
     } else {
       if (query.userId && query.userId !== user.id) {
         return res.status(403).json({ error: 'Недостаточно прав' });

@@ -28,7 +28,7 @@ export async function telegramAuth(req: Request, res: Response, next: NextFuncti
 
     const telegramId = telegramUser.id.toString();
 
-    const userRecord = await prisma.user.upsert({
+    let userRecord = await prisma.user.upsert({
       where: { telegramId },
       create: {
         telegramId,
@@ -50,6 +50,21 @@ export async function telegramAuth(req: Request, res: Response, next: NextFuncti
     const adminRecord = await prisma.admin.findUnique({
       where: { telegramId }
     });
+
+    if (userRecord.mutedUntil && userRecord.mutedUntil.getTime() < Date.now()) {
+      userRecord = await prisma.user.update({
+        where: { id: userRecord.id },
+        data: { mutedUntil: null }
+      });
+    }
+
+    if (userRecord.isBlocked) {
+      return res.status(403).json({
+        error: 'Пользователь заблокирован',
+        reason: userRecord.blockReason ?? null,
+        blocked: true
+      });
+    }
 
     req.context = {
       telegramUser,

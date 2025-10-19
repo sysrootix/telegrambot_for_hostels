@@ -18,7 +18,7 @@ function AdminRoute({ children }: { children: JSX.Element }) {
 }
 
 export default function App() {
-  const { initData, session, isLoading, error } = useSession();
+  const { initData, session, isLoading, error, blockedInfo } = useSession();
 
   if (!initData) {
     return <Loader label="Откройте бота из Telegram для загрузки приложения." />;
@@ -26,6 +26,22 @@ export default function App() {
 
   if (isLoading) {
     return <Loader />;
+  }
+
+  if (blockedInfo) {
+    return (
+      <Layout>
+        <div className="flex flex-1 items-center justify-center px-4 py-10">
+          <div className="flex w-full max-w-sm flex-col gap-3 rounded-2xl bg-white/5 p-6 text-center">
+            <h1 className="text-xl font-semibold text-tgText">{blockedInfo.title}</h1>
+            {blockedInfo.reason ? (
+              <p className="text-sm text-tgHint">{blockedInfo.reason}</p>
+            ) : null}
+            <p className="text-xs text-tgHint">Свяжитесь с администратором для разблокировки.</p>
+          </div>
+        </div>
+      </Layout>
+    );
   }
 
   if (error) {

@@ -8,7 +8,12 @@ export interface ApiUser {
   photoUrl: string | null;
   phone: string | null;
   bio: string | null;
-  payoutDetails: string | null;
+  payoutUsdtTrc20: string | null;
+  payoutUsdtBep20: string | null;
+  chatId: string | null;
+  mutedUntil: string | null;
+  isBlocked: boolean;
+  blockReason: string | null;
   createdAt: string;
   updatedAt: string;
 }

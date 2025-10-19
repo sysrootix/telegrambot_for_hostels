@@ -16,6 +16,10 @@ import {
   deleteUser,
   listUsers,
   updateUser,
+  muteUser,
+  unmuteUser,
+  blockUser,
+  unblockUser,
   type UpsertUserPayload
 } from '@/api/users';
 import {
@@ -50,7 +54,9 @@ type UserFormValues = {
   phone: string;
   bio: string;
   languageCode: string;
-  payoutDetails: string;
+  payoutUsdtTrc20: string;
+  payoutUsdtBep20: string;
+  chatId: string;
 };
 
 const userDefaultValues: UserFormValues = {
@@ -61,7 +67,9 @@ const userDefaultValues: UserFormValues = {
   phone: '',
   bio: '',
   languageCode: '',
-  payoutDetails: ''
+  payoutUsdtTrc20: '',
+  payoutUsdtBep20: '',
+  chatId: ''
 };
 
 interface FieldMeta {
@@ -135,11 +143,21 @@ const USER_FIELD_META: Record<keyof UserFormValues, FieldMeta> = {
     description:
       'Код языка Telegram (например, ru, en). Используется для настройки локализации внутри сервиса.'
   },
-  payoutDetails: {
-    label: 'Реквизиты',
+  payoutUsdtTrc20: {
+    label: 'USDT (TRC-20)',
+    required: false,
+    description: 'Адрес кошелька TRC-20 для выплат пользователю.'
+  },
+  payoutUsdtBep20: {
+    label: 'USDT (BEP-20)',
+    required: false,
+    description: 'Адрес кошелька BEP-20 для выплат пользователю.'
+  },
+  chatId: {
+    label: 'Chat ID',
     required: false,
     description:
-      'Информация для выплат: номер карты, криптокошелёк или любой другой удобный способ перечислений.'
+      'Идентификатор группового чата, где будет работать блокировка или мут. Можно указать один раз и использовать для действий модерации.'
   }
 };
 
@@ -151,12 +169,28 @@ const USER_FIELD_PLACEHOLDERS: Partial<Record<keyof UserFormValues, string>> = {
   phone: '+12345678900',
   bio: 'Короткая заметка о пользователе',
   languageCode: 'ru',
-  payoutDetails: 'Карта **** 1234, USDT TRC20, PayPal...'
+  payoutUsdtTrc20: 'TRC20 адрес',
+  payoutUsdtBep20: 'BEP20 адрес',
+  chatId: '-1001234567890'
 };
 
 type UpsertUserField = Extract<keyof UserFormValues, keyof UpsertUserPayload>;
 
+const MUTE_OPTIONS = [
+  { label: '30 мин', minutes: 30 },
+  { label: '1 час', minutes: 60 },
+  { label: '12 ч', minutes: 12 * 60 },
+  { label: '1 день', minutes: 24 * 60 },
+  { label: '7 дней', minutes: 7 * 24 * 60 }
+];
+
 type AdminTab = 'users' | 'checks' | 'admins';
+
+const ADMIN_TABS: { id: AdminTab; label: string }[] = [
+  { id: 'users', label: 'Пользователи' },
+  { id: 'checks', label: 'Чеки' },
+  { id: 'admins', label: 'Администраторы' }
+];
 
 type CheckFormValues = {
   amount: string;
@@ -212,7 +246,7 @@ function formatUserDisplay(user: Pick<ApiUser, 'firstName' | 'username' | 'teleg
 }
 
 function formatCheckAmount(amount: number) {
-  return currencyFormatter.format(amount);
+  return `${currencyFormatter.format(amount)} AED`;
 }
 
 function formatRange(range?: { start: string; end: string } | null) {
@@ -396,6 +430,57 @@ export function AdminDashboard() {
     onError: () => toast.error('Не удалось удалить пользователя')
   });
 
+  const muteUserMutation = useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: { durationMinutes?: number; until?: string; chatId?: string } }) =>
+      muteUser(id, payload),
+    onSuccess: async (updated) => {
+      toast.success('Пользователь временно ограничен');
+      if (userModal?.entity?.id === updated.id) {
+        setUserModal({ mode: 'edit', entity: updated });
+      }
+      await queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+    onError: () => toast.error('Не удалось применить ограничение')
+  });
+
+  const unmuteUserMutation = useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: { chatId?: string } }) => unmuteUser(id, payload),
+    onSuccess: async (updated) => {
+      toast.success('Ограничение снято');
+      if (userModal?.entity?.id === updated.id) {
+        setUserModal({ mode: 'edit', entity: updated });
+      }
+      await queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+    onError: () => toast.error('Не удалось снять ограничение')
+  });
+
+  const blockUserMutation = useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: { chatId?: string; reason?: string } }) =>
+      blockUser(id, payload),
+    onSuccess: async (updated) => {
+      toast.success('Пользователь заблокирован');
+      if (userModal?.entity?.id === updated.id) {
+        setUserModal({ mode: 'edit', entity: updated });
+      }
+      await queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+    onError: () => toast.error('Не удалось заблокировать пользователя')
+  });
+
+  const unblockUserMutation = useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: { chatId?: string } }) =>
+      unblockUser(id, payload),
+    onSuccess: async (updated) => {
+      toast.success('Пользователь разблокирован');
+      if (userModal?.entity?.id === updated.id) {
+        setUserModal({ mode: 'edit', entity: updated });
+      }
+      await queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+    onError: () => toast.error('Не удалось разблокировать пользователя')
+  });
+
   const createCheckMutation = useMutation({
     mutationFn: createCheckApi,
     onSuccess: async () => {
@@ -438,6 +523,8 @@ export function AdminDashboard() {
 
   const adminList = useMemo(() => adminsQuery.data ?? [], [adminsQuery.data]);
   const userList = useMemo(() => usersQuery.data ?? [], [usersQuery.data]);
+  const selectedUser = userModal?.entity ?? null;
+  const canModerateSelectedUser = Boolean(selectedUser?.chatId);
   const filteredAdminList = useMemo(() => {
     const query = adminSearch.trim().toLowerCase();
 
@@ -467,14 +554,18 @@ export function AdminDashboard() {
       const firstName = user.firstName?.toLowerCase() ?? '';
       const lastName = user.lastName?.toLowerCase() ?? '';
       const username = user.username?.toLowerCase() ?? '';
-      const payoutDetails = user.payoutDetails?.toLowerCase() ?? '';
+      const payoutTrc = user.payoutUsdtTrc20?.toLowerCase() ?? '';
+      const payoutBep = user.payoutUsdtBep20?.toLowerCase() ?? '';
+      const chatId = user.chatId?.toLowerCase() ?? '';
 
       return (
         user.telegramId.toLowerCase().includes(query) ||
         firstName.includes(query) ||
         lastName.includes(query) ||
         username.includes(query) ||
-        payoutDetails.includes(query)
+        payoutTrc.includes(query) ||
+        payoutBep.includes(query) ||
+        chatId.includes(query)
       );
     });
   }, [userList, userSearch]);
@@ -524,7 +615,9 @@ export function AdminDashboard() {
     apply('phone');
     apply('bio');
     apply('languageCode');
-    apply('payoutDetails');
+    apply('payoutUsdtTrc20');
+    apply('payoutUsdtBep20');
+    apply('chatId');
 
     return payload;
   };
@@ -562,7 +655,9 @@ export function AdminDashboard() {
       phone: user.phone ?? '',
       bio: user.bio ?? '',
       languageCode: user.languageCode ?? '',
-      payoutDetails: user.payoutDetails ?? ''
+      payoutUsdtTrc20: user.payoutUsdtTrc20 ?? '',
+      payoutUsdtBep20: user.payoutUsdtBep20 ?? '',
+      chatId: user.chatId ?? ''
     });
     setUserModal({ mode: 'edit', entity: user });
   };
@@ -627,6 +722,58 @@ export function AdminDashboard() {
 
       return { period };
     });
+  };
+
+  const handleMuteUser = async (minutes: number) => {
+    if (!userModal?.entity) {
+      return;
+    }
+
+    await muteUserMutation.mutateAsync({
+      id: userModal.entity.id,
+      payload: {
+        durationMinutes: minutes,
+        chatId: userModal.entity.chatId ?? undefined
+      }
+    });
+  };
+
+  const handleUnmuteUser = async () => {
+    if (!userModal?.entity) {
+      return;
+    }
+
+    await unmuteUserMutation.mutateAsync({
+      id: userModal.entity.id,
+      payload: {
+        chatId: userModal.entity.chatId ?? undefined
+      }
+    });
+  };
+
+  const handleBlockToggle = async (block: boolean) => {
+    if (!userModal?.entity) {
+      return;
+    }
+
+    if (block) {
+      const reason = window.prompt('Укажите причину блокировки (необязательно)') ?? undefined;
+
+      await blockUserMutation.mutateAsync({
+        id: userModal.entity.id,
+        payload: {
+          chatId: userModal.entity.chatId ?? undefined,
+          reason: reason?.trim() ? reason.trim() : undefined
+        }
+      });
+    } else {
+      await unblockUserMutation.mutateAsync({
+        id: userModal.entity.id,
+        payload: {
+          chatId: userModal.entity.chatId ?? undefined
+        }
+      });
+    }
   };
 
   const handleAdminSubmit = adminForm.handleSubmit(async (values) => {
@@ -701,7 +848,9 @@ export function AdminDashboard() {
       compare('phone', 'phone', userModal.entity.phone);
       compare('bio', 'bio', userModal.entity.bio);
       compare('languageCode', 'languageCode', userModal.entity.languageCode);
-      compare('payoutDetails', 'payoutDetails', userModal.entity.payoutDetails);
+      compare('payoutUsdtTrc20', 'payoutUsdtTrc20', userModal.entity.payoutUsdtTrc20);
+      compare('payoutUsdtBep20', 'payoutUsdtBep20', userModal.entity.payoutUsdtBep20);
+      compare('chatId', 'chatId', userModal.entity.chatId);
 
       if (Object.keys(updatePayload).length === 0) {
         toast('Изменений нет');
@@ -775,7 +924,11 @@ export function AdminDashboard() {
     deleteUserMutation.isPending ||
     createCheckMutation.isPending ||
     updateCheckMutation.isPending ||
-    deleteCheckMutation.isPending;
+    deleteCheckMutation.isPending ||
+    muteUserMutation.isPending ||
+    unmuteUserMutation.isPending ||
+    blockUserMutation.isPending ||
+    unblockUserMutation.isPending;
 
   const handleConfirmDelete = async () => {
     if (!confirmDelete) {
@@ -830,38 +983,28 @@ export function AdminDashboard() {
       <span className="text-xs uppercase tracking-wide text-tgHint">{label}</span>
       <span className="text-lg font-semibold text-tgText">{stats?.count ?? 0}</span>
       <span className="text-xs text-tgHint">
-        Сумма: {formatCheckAmount(stats?.total ?? 0)} ₽
+        Сумма: {formatCheckAmount(stats?.total ?? 0)}
       </span>
     </div>
   );
 
   return (
     <section className="flex flex-col gap-6">
-      <div className="flex flex-wrap gap-2">
-        <button
-          className={`flex-1 min-w-[30%] rounded-xl py-2 text-sm font-medium ${
-            activeTab === 'users' ? 'bg-tgButton text-tgButtonText' : 'bg-white/5'
-          }`}
-          onClick={() => setActiveTab('users')}
-        >
-          Пользователи ({userList.length})
-        </button>
-        <button
-          className={`flex-1 min-w-[30%] rounded-xl py-2 text-sm font-medium ${
-            activeTab === 'checks' ? 'bg-tgButton text-tgButtonText' : 'bg-white/5'
-          }`}
-          onClick={() => setActiveTab('checks')}
-        >
-          Чеки
-        </button>
-        <button
-          className={`flex-1 min-w-[30%] rounded-xl py-2 text-sm font-medium ${
-            activeTab === 'admins' ? 'bg-tgButton text-tgButtonText' : 'bg-white/5'
-          }`}
-          onClick={() => setActiveTab('admins')}
-        >
-          Администраторы ({adminList.length})
-        </button>
+      <div className="flex gap-2 overflow-x-auto rounded-2xl bg-white/5 p-2">
+        {ADMIN_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex-shrink-0 rounded-xl px-4 py-2 text-sm font-medium transition-colors ${
+              activeTab === tab.id ? 'bg-tgButton text-tgButtonText' : 'text-tgHint'
+            }`}
+          >
+            {tab.label}
+            {tab.id === 'users' ? ` (${userList.length})` : null}
+            {tab.id === 'admins' ? ` (${adminList.length})` : null}
+          </button>
+        ))}
       </div>
 
       {activeTab === 'admins' ? (
@@ -1066,6 +1209,13 @@ export function AdminDashboard() {
                         @{user.username ?? 'без username'}
                       </p>
                       <p className="text-sm text-tgHint">ID: {user.telegramId}</p>
+                      {user.isBlocked ? (
+                        <p className="text-xs text-red-400">Заблокирован</p>
+                      ) : user.mutedUntil ? (
+                        <p className="text-xs text-yellow-300">
+                          Мут до {dateTimeFormatter.format(new Date(user.mutedUntil))}
+                        </p>
+                      ) : null}
                     </div>
                     <div className="flex gap-2">
                       <button
@@ -1101,9 +1251,19 @@ export function AdminDashboard() {
                     </div>
                   </div>
                   {user.bio && <p className="text-sm text-tgHint">{user.bio}</p>}
-                  {user.payoutDetails && (
+                  {(user.payoutUsdtTrc20 || user.payoutUsdtBep20 || user.chatId) && (
                     <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-tgHint">
-                      <span className="text-tgText">Реквизиты:</span> {user.payoutDetails}
+                      <div className="flex flex-col gap-1">
+                        {user.payoutUsdtTrc20 ? (
+                          <span><span className="text-tgText">USDT TRC-20:</span> {user.payoutUsdtTrc20}</span>
+                        ) : null}
+                        {user.payoutUsdtBep20 ? (
+                          <span><span className="text-tgText">USDT BEP-20:</span> {user.payoutUsdtBep20}</span>
+                        ) : null}
+                        {user.chatId ? (
+                          <span><span className="text-tgText">Chat ID:</span> {user.chatId}</span>
+                        ) : null}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1161,12 +1321,13 @@ export function AdminDashboard() {
         title={userModal?.mode === 'edit' ? 'Редактирование пользователя' : 'Новый пользователь'}
         onClose={closeUserModal}
       >
-        <form onSubmit={handleUserSubmit} className="flex flex-col gap-3">
-          {renderUserField(
-            'telegramId',
-            <input
-              {...userForm.register('telegramId')}
-              placeholder={USER_FIELD_PLACEHOLDERS.telegramId}
+        <>
+          <form onSubmit={handleUserSubmit} className="flex flex-col gap-3">
+            {renderUserField(
+              'telegramId',
+              <input
+                {...userForm.register('telegramId')}
+                placeholder={USER_FIELD_PLACEHOLDERS.telegramId}
               className={modalInputClass}
             />
           )}
@@ -1229,12 +1390,29 @@ export function AdminDashboard() {
           )}
 
           {renderUserField(
-            'payoutDetails',
-            <textarea
-              {...userForm.register('payoutDetails')}
-              rows={3}
-              placeholder={USER_FIELD_PLACEHOLDERS.payoutDetails}
-              className={`${modalInputClass} min-h-[112px]`}
+            'payoutUsdtTrc20',
+            <input
+              {...userForm.register('payoutUsdtTrc20')}
+              placeholder={USER_FIELD_PLACEHOLDERS.payoutUsdtTrc20}
+              className={modalInputClass}
+            />
+          )}
+
+          {renderUserField(
+            'payoutUsdtBep20',
+            <input
+              {...userForm.register('payoutUsdtBep20')}
+              placeholder={USER_FIELD_PLACEHOLDERS.payoutUsdtBep20}
+              className={modalInputClass}
+            />
+          )}
+
+          {renderUserField(
+            'chatId',
+            <input
+              {...userForm.register('chatId')}
+              placeholder={USER_FIELD_PLACEHOLDERS.chatId}
+              className={modalInputClass}
             />
           )}
 
@@ -1245,7 +1423,64 @@ export function AdminDashboard() {
           >
             {userModal?.mode === 'edit' ? 'Сохранить' : 'Добавить'}
           </button>
-        </form>
+          </form>
+
+          {userModal?.mode === 'edit' && selectedUser ? (
+            <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] bg-[color:var(--tg-theme-section-bg-color,rgba(255,255,255,0.05))] p-4">
+              <div className="flex flex-col gap-1">
+                <h3 className="text-sm font-semibold text-tgText">Модерация</h3>
+                <p className="text-xs text-tgHint">
+                  {selectedUser.mutedUntil
+                    ? `Ограничение действует до ${dateTimeFormatter.format(new Date(selectedUser.mutedUntil))}`
+                    : 'Отправка сообщений разрешена.'}
+                </p>
+                <p className="text-xs text-tgHint">
+                  {selectedUser.isBlocked
+                    ? `Статус: заблокирован${selectedUser.blockReason ? ` (${selectedUser.blockReason})` : ''}.`
+                    : 'Статус: активен.'}
+                </p>
+                {!canModerateSelectedUser ? (
+                  <p className="text-xs text-red-300">Укажите Chat ID, чтобы применять ограничения.</p>
+                ) : null}
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {MUTE_OPTIONS.map((option) => (
+                  <button
+                    key={option.minutes}
+                    type="button"
+                    onClick={() => handleMuteUser(option.minutes)}
+                    disabled={isBusy || !canModerateSelectedUser}
+                    className="rounded-xl border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] px-3 py-1 text-xs text-tgText disabled:opacity-60"
+                  >
+                    Мут {option.label}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={handleUnmuteUser}
+                  disabled={isBusy || !canModerateSelectedUser}
+                  className="rounded-xl border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] px-3 py-1 text-xs text-tgText disabled:opacity-60"
+                >
+                  Снять мут
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => handleBlockToggle(!selectedUser.isBlocked)}
+                disabled={isBusy}
+                className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${
+                  selectedUser.isBlocked
+                    ? 'border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] text-tgText'
+                    : 'bg-red-500 text-white'
+                } disabled:opacity-60`}
+              >
+                {selectedUser.isBlocked ? 'Разблокировать' : 'Заблокировать'}
+              </button>
+            </div>
+          ) : null}
+        </>
       </MobileModal>
 
       <MobileModal
@@ -1313,7 +1548,7 @@ export function AdminDashboard() {
 
             <div className="text-xs text-tgHint">
               <span>Найдено чеков: {checkTotals.count}</span>
-              <span> · Сумма: {formatCheckAmount(checkTotals.total)} ₽</span>
+              <span> · Сумма: {formatCheckAmount(checkTotals.total)}</span>
             </div>
 
             <div className="flex flex-col gap-3">
@@ -1329,7 +1564,7 @@ export function AdminDashboard() {
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="text-lg font-semibold text-tgText">
-                          {formatCheckAmount(check.amount)} ₽
+                          {formatCheckAmount(check.amount)}
                         </p>
                         <p className="text-xs text-tgHint">
                           {dateTimeFormatter.format(new Date(check.createdAt))}
@@ -1350,7 +1585,7 @@ export function AdminDashboard() {
                             setConfirmDelete({
                               type: 'check',
                               id: check.id,
-                              name: `${formatCheckAmount(check.amount)} ₽`
+                              name: formatCheckAmount(check.amount)
                             })
                           }
                           disabled={isBusy}

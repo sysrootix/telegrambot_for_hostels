@@ -1,4 +1,4 @@
-import { MouseEvent, PropsWithChildren, ReactNode } from 'react';
+import { MouseEvent, PropsWithChildren, ReactNode, useEffect, useState } from 'react';
 
 interface MobileModalProps {
   open: boolean;
@@ -14,7 +14,28 @@ export function MobileModal({
   footer,
   children
 }: PropsWithChildren<MobileModalProps>) {
-  if (!open) {
+  const [render, setRender] = useState(open);
+  const [closing, setClosing] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setRender(true);
+      setClosing(false);
+      return;
+    }
+
+    if (render) {
+      setClosing(true);
+      const timeout = setTimeout(() => {
+        setRender(false);
+        setClosing(false);
+      }, 220);
+
+      return () => clearTimeout(timeout);
+    }
+  }, [open, render]);
+
+  if (!render) {
     return null;
   }
 
@@ -26,10 +47,16 @@ export function MobileModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col bg-[color:rgba(0,0,0,0.55)] backdrop-blur-md transition-colors"
+      className={`fixed inset-0 z-50 flex flex-col bg-[color:rgba(0,0,0,0.55)] backdrop-blur-md transition-opacity duration-200 ${
+        closing ? 'opacity-0' : 'opacity-100'
+      }`}
       onClick={handleBackdropClick}
     >
-      <div className="mt-auto flex max-h-[90vh] w-full flex-col overflow-hidden rounded-t-[32px] border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.08))] bg-[color:var(--tg-theme-secondary-bg-color,#17212b)] px-5 pb-6 pt-5 text-tgText shadow-[0_-18px_45px_rgba(0,0,0,0.5)]">
+      <div
+        className={`mt-auto flex max-h-[90vh] w-full transform flex-col overflow-hidden rounded-t-[32px] border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.08))] bg-[color:var(--tg-theme-secondary-bg-color,#17212b)] px-5 pb-6 pt-5 text-tgText shadow-[0_-18px_45px_rgba(0,0,0,0.5)] transition-transform duration-200 ${
+          closing ? 'translate-y-full' : 'translate-y-0'
+        }`}
+      >
         <div className="mb-4 flex items-center justify-between gap-3">
           <h2 className="text-lg font-semibold text-tgText">{title}</h2>
           <button

@@ -6,12 +6,20 @@ import { asyncHandler } from '../utils/asyncHandler';
 
 const router = Router();
 
-const updateProfileSchema = z.object({
-  payoutDetails: z
-    .string()
-    .max(2000, 'payoutDetails слишком длинные')
-    .optional()
-});
+const payoutFieldSchema = z
+  .string()
+  .max(255, 'Слишком длинное значение реквизитов')
+  .optional();
+
+const updateProfileSchema = z
+  .object({
+    payoutUsdtTrc20: payoutFieldSchema,
+    payoutUsdtBep20: payoutFieldSchema
+  })
+  .refine(
+    (data) => data.payoutUsdtTrc20 !== undefined || data.payoutUsdtBep20 !== undefined,
+    'Не передано ни одного поля для обновления'
+  );
 
 router.get(
   '/me',
@@ -31,17 +39,21 @@ router.patch(
     const { user } = req.context!;
     const payload = updateProfileSchema.parse(req.body);
 
-    if (payload.payoutDetails === undefined) {
-      return res.status(400).json({ error: 'payoutDetails is required' });
+    const data: Record<string, string | null> = {};
+
+    if (payload.payoutUsdtTrc20 !== undefined) {
+      const trimmed = payload.payoutUsdtTrc20.trim();
+      data.payoutUsdtTrc20 = trimmed.length > 0 ? trimmed : null;
     }
 
-    const trimmed = payload.payoutDetails.trim();
+    if (payload.payoutUsdtBep20 !== undefined) {
+      const trimmed = payload.payoutUsdtBep20.trim();
+      data.payoutUsdtBep20 = trimmed.length > 0 ? trimmed : null;
+    }
 
     const updated = await prisma.user.update({
       where: { id: user.id },
-      data: {
-        payoutDetails: trimmed.length > 0 ? trimmed : null
-      }
+      data
     });
 
     res.json(updated);
