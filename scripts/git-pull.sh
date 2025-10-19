@@ -17,8 +17,8 @@ fi
 
 cd "${REPO_ROOT}"
 
-BACKEND_ENV_FILE="${REPO_ROOT}/backend/.env.production"
-FRONTEND_ENV_FILE="${REPO_ROOT}/frontend/.env.production"
+BACKEND_ENV_FILE="${REPO_ROOT}/backend/.env"
+FRONTEND_ENV_FILE="${REPO_ROOT}/frontend/.env"
 if [[ ! -f "${BACKEND_ENV_FILE}" ]]; then
   echo "❌ Не найден файл ${BACKEND_ENV_FILE}. Создайте его на основе backend/.env.production.example." >&2
   exit 1

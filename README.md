@@ -86,7 +86,7 @@ VITE_API_BASE_URL=/api
 Тесты пока не реализованы. Перед деплоем стоит добавить модульные тесты для сервисов и компонента админ-панели.
 
 ## Продакшен деплой (кратко)
-1. Убедитесь, что настроены файлы окружения `backend/.env.production` и `frontend/.env.production` (см. пример `.example`).
+1. Убедитесь, что настроены файлы окружения `backend/.env` и `frontend/.env` (см. пример `.env.production.example`).
 2. На сервере подтянуть изменения и выполнить полный деплой (pull → npm install → build → копирование фронта → PM2 reload → prisma migrate deploy):
    ```bash
    cd /path/to/telegrambot_for_hostels
