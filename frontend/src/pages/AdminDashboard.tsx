@@ -56,7 +56,6 @@ type UserFormValues = {
   languageCode: string;
   payoutUsdtTrc20: string;
   payoutUsdtBep20: string;
-  chatId: string;
 };
 
 const userDefaultValues: UserFormValues = {
@@ -68,8 +67,7 @@ const userDefaultValues: UserFormValues = {
   bio: '',
   languageCode: '',
   payoutUsdtTrc20: '',
-  payoutUsdtBep20: '',
-  chatId: ''
+  payoutUsdtBep20: ''
 };
 
 interface FieldMeta {
@@ -152,12 +150,6 @@ const USER_FIELD_META: Record<keyof UserFormValues, FieldMeta> = {
     label: 'USDT (BEP-20)',
     required: false,
     description: 'Адрес кошелька BEP-20 для выплат пользователю.'
-  },
-  chatId: {
-    label: 'Chat ID',
-    required: false,
-    description:
-      'Идентификатор группового чата, где будет работать блокировка или мут. Можно указать один раз и использовать для действий модерации.'
   }
 };
 
@@ -170,8 +162,7 @@ const USER_FIELD_PLACEHOLDERS: Partial<Record<keyof UserFormValues, string>> = {
   bio: 'Короткая заметка о пользователе',
   languageCode: 'ru',
   payoutUsdtTrc20: 'TRC20 адрес',
-  payoutUsdtBep20: 'BEP20 адрес',
-  chatId: '-1001234567890'
+  payoutUsdtBep20: 'BEP20 адрес'
 };
 
 type UpsertUserField = Extract<keyof UserFormValues, keyof UpsertUserPayload>;
@@ -537,7 +528,6 @@ export function AdminDashboard() {
   const adminList = useMemo(() => adminsQuery.data ?? [], [adminsQuery.data]);
   const userList = useMemo(() => usersQuery.data ?? [], [usersQuery.data]);
   const selectedUser = userModal?.entity ?? null;
-  const canModerateSelectedUser = Boolean(selectedUser?.chatId?.trim());
   const filteredAdminList = useMemo(() => {
     const query = adminSearch.trim().toLowerCase();
 
@@ -569,7 +559,6 @@ export function AdminDashboard() {
       const username = user.username?.toLowerCase() ?? '';
       const payoutTrc = user.payoutUsdtTrc20?.toLowerCase() ?? '';
       const payoutBep = user.payoutUsdtBep20?.toLowerCase() ?? '';
-      const chatId = user.chatId?.toLowerCase() ?? '';
 
       return (
         user.telegramId.toLowerCase().includes(query) ||
@@ -577,8 +566,7 @@ export function AdminDashboard() {
         lastName.includes(query) ||
         username.includes(query) ||
         payoutTrc.includes(query) ||
-        payoutBep.includes(query) ||
-        chatId.includes(query)
+        payoutBep.includes(query)
       );
     });
   }, [userList, userSearch]);
@@ -651,7 +639,6 @@ export function AdminDashboard() {
     apply('languageCode');
     apply('payoutUsdtTrc20');
     apply('payoutUsdtBep20');
-    apply('chatId');
 
     return payload;
   };
@@ -690,8 +677,7 @@ export function AdminDashboard() {
       bio: user.bio ?? '',
       languageCode: user.languageCode ?? '',
       payoutUsdtTrc20: user.payoutUsdtTrc20 ?? '',
-      payoutUsdtBep20: user.payoutUsdtBep20 ?? '',
-      chatId: user.chatId ?? ''
+      payoutUsdtBep20: user.payoutUsdtBep20 ?? ''
     });
     setUserModal({ mode: 'edit', entity: user });
   };
@@ -925,7 +911,6 @@ export function AdminDashboard() {
       compare('languageCode', 'languageCode', userModal.entity.languageCode);
       compare('payoutUsdtTrc20', 'payoutUsdtTrc20', userModal.entity.payoutUsdtTrc20);
       compare('payoutUsdtBep20', 'payoutUsdtBep20', userModal.entity.payoutUsdtBep20);
-      compare('chatId', 'chatId', userModal.entity.chatId);
 
       if (Object.keys(updatePayload).length === 0) {
         toast('Изменений нет');
@@ -1341,7 +1326,7 @@ export function AdminDashboard() {
                     </div>
                   </div>
                   {user.bio && <p className="text-sm text-tgHint">{user.bio}</p>}
-                  {(user.payoutUsdtTrc20 || user.payoutUsdtBep20 || user.chatId) && (
+                  {(user.payoutUsdtTrc20 || user.payoutUsdtBep20) && (
                     <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-tgHint">
                       <div className="flex flex-col gap-1">
                         {user.payoutUsdtTrc20 ? (
@@ -1349,9 +1334,6 @@ export function AdminDashboard() {
                         ) : null}
                         {user.payoutUsdtBep20 ? (
                           <span><span className="text-tgText">USDT BEP-20:</span> {user.payoutUsdtBep20}</span>
-                        ) : null}
-                        {user.chatId ? (
-                          <span><span className="text-tgText">Chat ID:</span> {user.chatId}</span>
                         ) : null}
                       </div>
                     </div>
@@ -1497,15 +1479,6 @@ export function AdminDashboard() {
             />
           )}
 
-          {renderUserField(
-            'chatId',
-            <input
-              {...userForm.register('chatId')}
-              placeholder={USER_FIELD_PLACEHOLDERS.chatId}
-              className={modalInputClass}
-            />
-          )}
-
           <button
             type="submit"
             disabled={isBusy}
@@ -1529,9 +1502,6 @@ export function AdminDashboard() {
                 ? `Статус: заблокирован${selectedUser.blockReason ? ` (${selectedUser.blockReason})` : ''}.`
                 : 'Статус: активен.'}
             </p>
-            {!canModerateSelectedUser ? (
-              <p className="text-xs text-red-300">Укажите Chat ID, чтобы применять ограничения.</p>
-            ) : null}
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -1540,7 +1510,7 @@ export function AdminDashboard() {
                 key={option.minutes}
                 type="button"
                 onClick={() => handleMuteUser(option.minutes)}
-                disabled={isBusy || !canModerateSelectedUser}
+                disabled={isBusy}
                 className="rounded-xl border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] px-3 py-1 text-xs text-tgText disabled:opacity-60"
               >
                 Мут {option.label}
@@ -1552,7 +1522,7 @@ export function AdminDashboard() {
             <button
               type="button"
               onClick={handleUnmuteUser}
-              disabled={isBusy || !canModerateSelectedUser || !selectedUser.mutedUntil}
+              disabled={isBusy || !selectedUser.mutedUntil}
               className="rounded-xl bg-tgButton px-4 py-2 text-sm font-semibold text-tgButtonText disabled:opacity-60"
             >
               Снять мут
