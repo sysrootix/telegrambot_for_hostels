@@ -308,6 +308,7 @@ export function AdminDashboard() {
   const [userSelectModal, setUserSelectModal] = useState(false);
   const [checkCreatedModal, setCheckCreatedModal] = useState(false);
   const [userSearchForCheck, setUserSearchForCheck] = useState('');
+  const [isCheckCreationFlow, setIsCheckCreationFlow] = useState(false);
 
   const adminForm = useForm<AdminFormValues>({
     defaultValues: adminDefaultValues
@@ -490,8 +491,8 @@ export function AdminDashboard() {
         queryClient.invalidateQueries({ queryKey: ['my-checks'] })
       ]);
 
-      // Show confirmation modal if creating from checks tab (userSelectModal is open)
-      if (userSelectModal) {
+      // Show confirmation modal if creating from checks tab
+      if (isCheckCreationFlow) {
         setCheckCreatedModal(true);
       }
     },
@@ -706,6 +707,7 @@ export function AdminDashboard() {
   const openUserSelectModalForCheck = () => {
     setUserSearchForCheck('');
     setUserSelectModal(true);
+    setIsCheckCreationFlow(true);
   };
 
   const handleUserSelectForCheck = (user: ApiUser) => {
@@ -719,6 +721,7 @@ export function AdminDashboard() {
     checkForm.reset(checkFormDefaultValues);
     setUserSearchForCheck('');
     setUserSelectModal(true);
+    // Keep isCheckCreationFlow true to continue the flow
   };
 
   const handleCheckCreatedFinish = () => {
@@ -727,6 +730,7 @@ export function AdminDashboard() {
     setUserSelectModal(false);
     checkForm.reset(checkFormDefaultValues);
     setUserSearchForCheck('');
+    setIsCheckCreationFlow(false);
   };
 
   const openCheckEditModal = (user: ApiUser, check: ApiCheck) => {
@@ -740,6 +744,15 @@ export function AdminDashboard() {
   const closeCheckFormModal = () => {
     setCheckFormModal(null);
     checkForm.reset(checkFormDefaultValues);
+  };
+
+  const handleCloseCheckFormModal = () => {
+    closeCheckFormModal();
+    // If user manually closes the check form during creation flow, cancel the flow
+    if (isCheckCreationFlow) {
+      setIsCheckCreationFlow(false);
+      setUserSelectModal(false);
+    }
   };
 
   const openHelp = (meta: FieldMeta) => {
@@ -950,10 +963,12 @@ export function AdminDashboard() {
         note: note.length > 0 ? note : undefined
       });
 
-      // Only close and show confirmation if creating from checks tab
-      if (userSelectModal) {
-        closeCheckFormModal();
-        return; // Don't call closeCheckFormModal again
+      // Close form modal - confirmation modal will be shown by mutation's onSuccess
+      closeCheckFormModal();
+
+      // Don't call closeCheckFormModal again for check creation flow
+      if (isCheckCreationFlow) {
+        return;
       }
     } else {
       const updatePayload: { amount?: number; note?: string } = {};
@@ -976,9 +991,9 @@ export function AdminDashboard() {
           payload: updatePayload
         });
       }
-    }
 
-    closeCheckFormModal();
+      closeCheckFormModal();
+    }
   });
 
   const isBusy =
@@ -1669,7 +1684,7 @@ export function AdminDashboard() {
       <MobileModal
         open={Boolean(checkFormModal)}
         title={checkFormModal?.mode === 'edit' ? 'Редактирование чека' : 'Новый чек'}
-        onClose={closeCheckFormModal}
+        onClose={handleCloseCheckFormModal}
       >
         <form onSubmit={handleCheckSubmit} className="flex flex-col gap-3">
           {checkFormModal ? (
@@ -1813,6 +1828,7 @@ export function AdminDashboard() {
         onClose={() => {
           setUserSelectModal(false);
           setUserSearchForCheck('');
+          setIsCheckCreationFlow(false);
         }}
       >
         <div className="flex flex-col gap-3">
