@@ -34,8 +34,6 @@ import {
 import { useSession } from '@/providers/SessionProvider';
 import type { ApiAdmin, ApiCheck, ApiUser, ChecksSummaryRow } from '@/types/api';
 
-const DEFAULT_CHAT_ID = '-1003141626322';
-
 type AdminFormValues = {
   telegramId: string;
   displayName: string;
@@ -71,7 +69,7 @@ const userDefaultValues: UserFormValues = {
   languageCode: '',
   payoutUsdtTrc20: '',
   payoutUsdtBep20: '',
-  chatId: DEFAULT_CHAT_ID
+  chatId: ''
 };
 
 interface FieldMeta {
@@ -316,6 +314,9 @@ export function AdminDashboard() {
     user: ApiUser;
     reason: string;
   } | null>(null);
+  const [userSelectModal, setUserSelectModal] = useState(false);
+  const [checkCreatedModal, setCheckCreatedModal] = useState(false);
+  const [userSearchForCheck, setUserSearchForCheck] = useState('');
 
   const adminForm = useForm<AdminFormValues>({
     defaultValues: adminDefaultValues
@@ -377,7 +378,7 @@ export function AdminDashboard() {
 
   const checksSummaryQuery = useQuery({
     queryKey: ['check-summary', summaryRange.start ?? null, summaryRange.end ?? null],
-    queryFn: () => fetchChecksSummary(summaryRange),
+    queryFn: () => fetchChecksSummary({ startDate: summaryRange.start, endDate: summaryRange.end }),
     enabled: (session?.isAdmin ?? false) && activeTab === 'checks'
   });
 
@@ -497,6 +498,11 @@ export function AdminDashboard() {
         queryClient.invalidateQueries({ queryKey: ['check-summary'] }),
         queryClient.invalidateQueries({ queryKey: ['my-checks'] })
       ]);
+
+      // Show confirmation modal if creating from checks tab (userSelectModal is open)
+      if (userSelectModal) {
+        setCheckCreatedModal(true);
+      }
     },
     onError: () => toast.error('Не удалось создать чек')
   });
@@ -531,7 +537,7 @@ export function AdminDashboard() {
   const adminList = useMemo(() => adminsQuery.data ?? [], [adminsQuery.data]);
   const userList = useMemo(() => usersQuery.data ?? [], [usersQuery.data]);
   const selectedUser = userModal?.entity ?? null;
-  const canModerateSelectedUser = Boolean((selectedUser?.chatId ?? DEFAULT_CHAT_ID).trim());
+  const canModerateSelectedUser = Boolean(selectedUser?.chatId?.trim());
   const filteredAdminList = useMemo(() => {
     const query = adminSearch.trim().toLowerCase();
 
@@ -576,6 +582,27 @@ export function AdminDashboard() {
       );
     });
   }, [userList, userSearch]);
+
+  const filteredUsersForCheckCreation = useMemo(() => {
+    const query = userSearchForCheck.trim().toLowerCase();
+
+    if (!query) {
+      return userList;
+    }
+
+    return userList.filter((user) => {
+      const firstName = user.firstName?.toLowerCase() ?? '';
+      const lastName = user.lastName?.toLowerCase() ?? '';
+      const username = user.username?.toLowerCase() ?? '';
+
+      return (
+        user.telegramId.toLowerCase().includes(query) ||
+        firstName.includes(query) ||
+        lastName.includes(query) ||
+        username.includes(query)
+      );
+    });
+  }, [userList, userSearchForCheck]);
 
   const checkList = useMemo(() => checksQuery.data ?? [], [checksQuery.data]);
 
@@ -690,6 +717,32 @@ export function AdminDashboard() {
     setCheckFormModal({ mode: 'create', user });
   };
 
+  const openUserSelectModalForCheck = () => {
+    setUserSearchForCheck('');
+    setUserSelectModal(true);
+  };
+
+  const handleUserSelectForCheck = (user: ApiUser) => {
+    setUserSelectModal(false);
+    openCheckCreateModal(user);
+  };
+
+  const handleCheckCreatedAddAnother = () => {
+    setCheckCreatedModal(false);
+    setCheckFormModal(null);
+    checkForm.reset(checkFormDefaultValues);
+    setUserSearchForCheck('');
+    setUserSelectModal(true);
+  };
+
+  const handleCheckCreatedFinish = () => {
+    setCheckCreatedModal(false);
+    setCheckFormModal(null);
+    setUserSelectModal(false);
+    checkForm.reset(checkFormDefaultValues);
+    setUserSearchForCheck('');
+  };
+
   const openCheckEditModal = (user: ApiUser, check: ApiCheck) => {
     checkForm.reset({
       amount: check.amount.toString(),
@@ -740,7 +793,7 @@ export function AdminDashboard() {
       id: userModal.entity.id,
       payload: {
         durationMinutes: minutes,
-        chatId: userModal.entity.chatId ?? DEFAULT_CHAT_ID
+        chatId: userModal.entity.chatId ?? undefined
       }
     });
   };
@@ -753,7 +806,7 @@ export function AdminDashboard() {
     await unmuteUserMutation.mutateAsync({
       id: userModal.entity.id,
       payload: {
-        chatId: userModal.entity.chatId ?? DEFAULT_CHAT_ID
+        chatId: userModal.entity.chatId ?? undefined
       }
     });
   };
@@ -777,7 +830,7 @@ export function AdminDashboard() {
     }
 
     const payloadBase = {
-      chatId: blockModal.user.chatId ?? DEFAULT_CHAT_ID
+      chatId: blockModal.user.chatId ?? undefined
     };
 
     if (blockModal.mode === 'block') {
@@ -911,6 +964,12 @@ export function AdminDashboard() {
         amount: normalizedAmount,
         note: note.length > 0 ? note : undefined
       });
+
+      // Only close and show confirmation if creating from checks tab
+      if (userSelectModal) {
+        closeCheckFormModal();
+        return; // Don't call closeCheckFormModal again
+      }
     } else {
       const updatePayload: { amount?: number; note?: string } = {};
 
@@ -1099,6 +1158,15 @@ export function AdminDashboard() {
         </div>
       ) : activeTab === 'checks' ? (
         <div className="flex flex-col gap-4">
+          <button
+            type="button"
+            onClick={openUserSelectModalForCheck}
+            className="flex flex-col gap-1 rounded-2xl bg-white/5 p-4 text-left transition-colors hover:bg-white/10"
+          >
+            <span className="text-base font-semibold text-tgText">Создать чек</span>
+            <span className="text-sm text-tgHint">Выбрать пользователя и добавить чек.</span>
+          </button>
+
           <div className="rounded-2xl bg-white/5 p-4">
             <h2 className="text-lg font-semibold text-tgText">Сводка чеков</h2>
             <p className="mt-1 text-sm text-tgHint">
@@ -1231,9 +1299,6 @@ export function AdminDashboard() {
                         @{user.username ?? 'без username'}
                       </p>
                       <p className="text-sm text-tgHint">ID: {user.telegramId}</p>
-                      <p className="text-xs text-tgHint">
-                        Chat ID: {user.chatId ?? DEFAULT_CHAT_ID}
-                      </p>
                       {user.isBlocked ? (
                         <p className="text-xs text-red-400">Заблокирован</p>
                       ) : user.mutedUntil ? (
@@ -1678,7 +1743,7 @@ export function AdminDashboard() {
 
       <MobileModal
         open={Boolean(helpTopic)}
-        title={helpTopic?.title ?? ''}
+        title={helpTopic?.label ?? ''}
         onClose={() => setHelpTopic(null)}
       >
         <p className="text-sm text-tgText">{helpTopic?.description}</p>
@@ -1769,6 +1834,76 @@ export function AdminDashboard() {
           {confirmDelete?.type === 'check'
             ? `Удалить чек на ${confirmDelete?.name}? Это действие нельзя отменить.`
             : `Действительно удалить «${confirmDelete?.name}»? Это действие нельзя отменить.`}
+        </p>
+      </MobileModal>
+
+      <MobileModal
+        open={userSelectModal && !checkFormModal}
+        title="Выбрать пользователя"
+        onClose={() => {
+          setUserSelectModal(false);
+          setUserSearchForCheck('');
+        }}
+      >
+        <div className="flex flex-col gap-3">
+          <input
+            value={userSearchForCheck}
+            onChange={(event) => setUserSearchForCheck(event.target.value)}
+            placeholder="Поиск по имени, username или ID"
+            className={modalInputClass}
+          />
+
+          <div className="flex max-h-[400px] flex-col gap-2 overflow-y-auto">
+            {filteredUsersForCheckCreation.length === 0 ? (
+              <p className="text-sm text-tgHint">
+                {userSearchForCheck ? 'По запросу ничего не найдено.' : 'Пользователи не найдены.'}
+              </p>
+            ) : (
+              filteredUsersForCheckCreation.map((user) => (
+                <button
+                  key={user.id}
+                  type="button"
+                  onClick={() => handleUserSelectForCheck(user)}
+                  className="flex flex-col gap-1 rounded-2xl border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] bg-[color:var(--tg-theme-section-bg-color,rgba(255,255,255,0.05))] p-3 text-left transition-colors hover:bg-[color:var(--tg-theme-section-bg-color,rgba(255,255,255,0.1))]"
+                >
+                  <span className="text-base font-semibold text-tgText">
+                    {formatUserDisplay(user)}
+                  </span>
+                  <span className="text-sm text-tgHint">
+                    @{user.username ?? 'без username'} · ID: {user.telegramId}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      </MobileModal>
+
+      <MobileModal
+        open={checkCreatedModal}
+        title="Чек создан"
+        onClose={handleCheckCreatedFinish}
+        footer={
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={handleCheckCreatedAddAnother}
+              className="rounded-xl bg-tgButton px-4 py-2 text-sm font-semibold text-tgButtonText"
+            >
+              Добавить еще чек
+            </button>
+            <button
+              type="button"
+              onClick={handleCheckCreatedFinish}
+              className="rounded-xl border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] px-4 py-2 text-sm text-tgText"
+            >
+              Вернуться в админку
+            </button>
+          </div>
+        }
+      >
+        <p className="text-sm text-tgText">
+          Чек успешно создан. Хотите добавить еще один чек или вернуться в админку?
         </p>
       </MobileModal>
     </section>
