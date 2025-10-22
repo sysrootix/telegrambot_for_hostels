@@ -63,6 +63,24 @@ export interface ChecksSummaryResponse {
   users: ChecksSummaryRow[];
 }
 
+export interface MySalarySummaryResponse {
+  generatedAt: string;
+  period: 'day' | 'week' | 'month' | 'custom';
+  range: {
+    start: string;
+    end: string;
+  };
+  stats: {
+    amount: number;
+    checks: number;
+    salary: number | null;
+    percent: number | null;
+    partnerFromOwn: number | null;
+    partnerFromOthers: number | null;
+    totalChecks: number;
+  };
+}
+
 export interface TelegramUser {
   id: number;
   is_bot?: boolean;

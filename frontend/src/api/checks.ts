@@ -2,7 +2,8 @@ import apiClient from './client';
 
 import type {
   ApiCheck,
-  ChecksSummaryResponse
+  ChecksSummaryResponse,
+  MySalarySummaryResponse
 } from '@/types/api';
 
 export type CheckPeriod = 'day' | 'week' | 'month' | 'custom';
@@ -48,6 +49,13 @@ export async function deleteCheck(id: string) {
 
 export async function fetchChecksSummary(params: { startDate?: string; endDate?: string }) {
   const { data } = await apiClient.get<ChecksSummaryResponse>('/checks/summary', {
+    params
+  });
+  return data;
+}
+
+export async function fetchMySalarySummary(params: { period?: Exclude<CheckPeriod, 'custom'>; startDate?: string; endDate?: string }) {
+  const { data } = await apiClient.get<MySalarySummaryResponse>('/checks/summary/self', {
     params
   });
   return data;

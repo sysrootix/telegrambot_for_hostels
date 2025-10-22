@@ -50,6 +50,12 @@ const summaryQuerySchema = z.object({
   endDate: z.string().optional()
 });
 
+const selfSummaryQuerySchema = z.object({
+  period: z.enum(['day', 'week', 'month']).optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional()
+});
+
 interface DateRange {
   start?: Date;
   end?: Date;
@@ -160,6 +166,9 @@ function toDecimal(amount: number) {
   return new Prisma.Decimal(rounded.toFixed(2));
 }
 
+const FUND_RATE = 0.15;
+const roundAmount = (value: number) => Math.round(value * 100) / 100;
+
 router.use(requireAuth);
 
 router.get(
@@ -180,11 +189,24 @@ router.get(
         targetUserId = user.id;
       }
     } else {
-      if (query.userId && query.userId !== user.id) {
-        return res.status(403).json({ error: 'Недостаточно прав' });
-      }
+      if (query.userId && query.userId !== 'me' && query.userId !== user.id) {
+        const target = await prisma.user.findUnique({
+          where: { id: query.userId },
+          select: { id: true, isPartner: true }
+        });
 
-      targetUserId = user.id;
+        if (!target) {
+          return res.status(404).json({ error: 'Пользователь не найден' });
+        }
+
+        if (target.isPartner) {
+          return res.status(403).json({ error: 'Недостаточно прав' });
+        }
+
+        targetUserId = target.id;
+      } else {
+        targetUserId = user.id;
+      }
     }
 
     const where: Prisma.CheckWhereInput = {
@@ -334,6 +356,108 @@ router.delete(
     });
 
     res.status(204).send();
+  })
+);
+
+router.get(
+  '/summary/self',
+  asyncHandler(async (req, res) => {
+    const { user } = req.context!;
+    const query = selfSummaryQuerySchema.parse(req.query);
+    const reference = new Date();
+
+    const useCustomRange = Boolean(query.startDate?.trim() || query.endDate?.trim());
+    const baseRange = currentMonthRange(reference);
+
+    const resolvedRange = resolveRange(
+      useCustomRange
+        ? {
+            startDate: query.startDate,
+            endDate: query.endDate
+          }
+        : {
+            period: query.period ?? 'month',
+            startDate: query.startDate,
+            endDate: query.endDate
+          }
+    );
+
+    const range: Required<DateRange> = {
+      start: resolvedRange.start ?? baseRange.start,
+      end: resolvedRange.end ?? baseRange.end
+    };
+
+    const [totalAggregate, userAggregate] = await Promise.all([
+      prisma.check.aggregate({
+        where: {
+          createdAt: {
+            gte: range.start,
+            lte: range.end
+          }
+        },
+        _sum: {
+          amount: true
+        },
+        _count: {
+          id: true
+        }
+      }),
+      prisma.check.aggregate({
+        where: {
+          userId: user.id,
+          createdAt: {
+            gte: range.start,
+            lte: range.end
+          }
+        },
+        _sum: {
+          amount: true
+        },
+        _count: {
+          id: true
+        }
+      })
+    ]);
+
+    const totalAmount = totalAggregate._sum.amount ? totalAggregate._sum.amount.toNumber() : 0;
+    const totalChecks = totalAggregate._count.id ?? 0;
+
+    const ownAmount = userAggregate._sum.amount ? userAggregate._sum.amount.toNumber() : 0;
+    const ownChecks = userAggregate._count.id ?? 0;
+
+    let salary: number | null = null;
+    let partnerFromOwn: number | null = null;
+    let partnerFromOthers: number | null = null;
+
+    if (typeof user.commissionPercent === 'number') {
+      const baseRate = user.commissionPercent / 100;
+      if (user.isPartner) {
+        const othersAmount = Math.max(totalAmount - ownAmount, 0);
+        partnerFromOwn = roundAmount(baseRate * FUND_RATE * ownAmount);
+        partnerFromOthers = roundAmount(baseRate * FUND_RATE * othersAmount);
+        salary = roundAmount((partnerFromOwn ?? 0) + (partnerFromOthers ?? 0));
+      } else {
+        salary = roundAmount(baseRate * FUND_RATE * totalAmount);
+      }
+    }
+
+    res.json({
+      generatedAt: reference,
+      period: useCustomRange ? 'custom' : query.period ?? 'month',
+      range: {
+        start: range.start,
+        end: range.end
+      },
+      stats: {
+        amount: roundAmount(ownAmount),
+        checks: ownChecks,
+        salary,
+        percent: user.commissionPercent ?? null,
+        partnerFromOwn: user.isPartner ? partnerFromOwn : null,
+        partnerFromOthers: user.isPartner ? partnerFromOthers : null,
+        totalChecks
+      }
+    });
   })
 );
 
