@@ -11,6 +11,8 @@ export interface ApiUser {
   payoutUsdtTrc20: string | null;
   payoutUsdtBep20: string | null;
   chatId: string | null;
+  commissionPercent: number | null;
+  isPartner: boolean;
   mutedUntil: string | null;
   isBlocked: boolean;
   blockReason: string | null;
@@ -43,7 +45,7 @@ export interface CheckStats {
 }
 
 export interface ChecksSummaryRow {
-  user: Pick<ApiUser, 'id' | 'telegramId' | 'firstName' | 'lastName' | 'username'>;
+  user: Pick<ApiUser, 'id' | 'telegramId' | 'firstName' | 'lastName' | 'username' | 'commissionPercent' | 'isPartner'>;
   day: CheckStats;
   week: CheckStats;
   month: CheckStats;

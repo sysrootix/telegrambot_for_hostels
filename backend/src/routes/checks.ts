@@ -423,7 +423,9 @@ router.get(
           telegramId: user.telegramId,
           firstName: user.firstName,
           lastName: user.lastName,
-          username: user.username
+          username: user.username,
+          commissionPercent: user.commissionPercent,
+          isPartner: user.isPartner
         },
         day,
         week,

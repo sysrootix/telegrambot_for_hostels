@@ -17,6 +17,13 @@ const sanitizeNullableString = (value?: string) => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
+const percentSchema = z
+  .number()
+  .min(0, 'Процент не может быть меньше 0')
+  .max(100, 'Процент не может быть больше 100')
+  .nullable()
+  .optional();
+
 const userBodySchema = z.object({
   telegramId: z.string().min(1, 'telegramId is required'),
   username: z.string().optional(),
@@ -28,7 +35,9 @@ const userBodySchema = z.object({
   bio: z.string().optional(),
   payoutUsdtTrc20: z.string().max(255).optional(),
   payoutUsdtBep20: z.string().max(255).optional(),
-  chatId: z.string().optional()
+  chatId: z.string().optional(),
+  commissionPercent: percentSchema,
+  isPartner: z.boolean().optional()
 });
 const updateUserSchema = userBodySchema.partial();
 
@@ -69,6 +78,19 @@ function parseDateInput(value: string | undefined) {
   }
 
   return parsed;
+}
+
+function sanitizePercent(value: number | null | undefined) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null) {
+    return null;
+  }
+
+  const rounded = Math.round(value * 100) / 100;
+  return rounded;
 }
 
 async function withTelegramAction<T>(action: () => Promise<T>) {
@@ -232,10 +254,12 @@ router.post(
     const languageCode = sanitizeNullableString(data.languageCode);
     const photoUrl = sanitizeNullableString(data.photoUrl);
     const phone = sanitizeNullableString(data.phone);
-  const bio = sanitizeNullableString(data.bio);
+    const bio = sanitizeNullableString(data.bio);
     const payoutUsdtTrc20 = sanitizeNullableString(data.payoutUsdtTrc20);
     const payoutUsdtBep20 = sanitizeNullableString(data.payoutUsdtBep20);
     const chatId = sanitizeNullableString(data.chatId);
+    const commissionPercent = sanitizePercent(data.commissionPercent);
+    const isPartner = data.isPartner ?? false;
     const resolvedChatId = (chatId ?? env.DEFAULT_CHAT_ID)?.trim();
 
     const user = await prisma.user.create({
@@ -250,6 +274,8 @@ router.post(
         ...(bio !== undefined ? { bio } : {}),
         ...(payoutUsdtTrc20 !== undefined ? { payoutUsdtTrc20 } : {}),
         ...(payoutUsdtBep20 !== undefined ? { payoutUsdtBep20 } : {}),
+        isPartner,
+        ...(commissionPercent !== undefined ? { commissionPercent } : {}),
         ...(resolvedChatId ? { chatId: resolvedChatId } : {})
       }
     });
@@ -281,12 +307,13 @@ router.put(
     const firstName = sanitizeNullableString(data.firstName);
     const lastName = sanitizeNullableString(data.lastName);
     const languageCode = sanitizeNullableString(data.languageCode);
-  const photoUrl = sanitizeNullableString(data.photoUrl);
-  const phone = sanitizeNullableString(data.phone);
-  const bio = sanitizeNullableString(data.bio);
+    const photoUrl = sanitizeNullableString(data.photoUrl);
+    const phone = sanitizeNullableString(data.phone);
+    const bio = sanitizeNullableString(data.bio);
     let payoutUsdtTrc20 = sanitizeNullableString(data.payoutUsdtTrc20);
     let payoutUsdtBep20 = sanitizeNullableString(data.payoutUsdtBep20);
     let chatId = sanitizeNullableString(data.chatId);
+    const commissionPercent = sanitizePercent(data.commissionPercent);
     if (chatId === null) {
       chatId = env.DEFAULT_CHAT_ID;
     }
@@ -304,6 +331,8 @@ router.put(
         ...(bio !== undefined ? { bio } : {}),
         ...(payoutUsdtTrc20 !== undefined ? { payoutUsdtTrc20 } : {}),
         ...(payoutUsdtBep20 !== undefined ? { payoutUsdtBep20 } : {}),
+        ...(commissionPercent !== undefined ? { commissionPercent } : {}),
+        ...(data.isPartner !== undefined ? { isPartner: data.isPartner } : {}),
         ...(chatId !== undefined ? { chatId: chatId ?? env.DEFAULT_CHAT_ID } : {})
       }
     });

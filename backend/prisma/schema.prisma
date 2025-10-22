@@ -20,6 +20,8 @@ model User {
   payoutUsdtTrc20 String?
   payoutUsdtBep20 String?
   chatId       String?
+  commissionPercent Float?
+  isPartner    Boolean  @default(false)
   mutedUntil   DateTime?
   isBlocked    Boolean  @default(false)
   blockReason  String?

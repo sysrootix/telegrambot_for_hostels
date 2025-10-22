@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
+import { toPng } from 'html-to-image';
 
 import { MobileModal } from '@/components/MobileModal';
 import {
@@ -56,6 +57,8 @@ type UserFormValues = {
   languageCode: string;
   payoutUsdtTrc20: string;
   payoutUsdtBep20: string;
+  commissionPercent: string;
+  isPartner: boolean;
 };
 
 const userDefaultValues: UserFormValues = {
@@ -67,7 +70,9 @@ const userDefaultValues: UserFormValues = {
   bio: '',
   languageCode: '',
   payoutUsdtTrc20: '',
-  payoutUsdtBep20: ''
+  payoutUsdtBep20: '',
+  commissionPercent: '',
+  isPartner: false
 };
 
 interface FieldMeta {
@@ -150,6 +155,16 @@ const USER_FIELD_META: Record<keyof UserFormValues, FieldMeta> = {
     label: 'USDT (BEP-20)',
     required: false,
     description: 'Адрес кошелька BEP-20 для выплат пользователю.'
+  },
+  commissionPercent: {
+    label: 'Процент, %',
+    required: false,
+    description: 'Процент от суммы чеков, используемый для расчёта зарплаты.'
+  },
+  isPartner: {
+    label: 'Партнёр',
+    required: false,
+    description: 'Отмечайте, если пользователь получает партнёрскую долю фонда.'
   }
 };
 
@@ -162,10 +177,14 @@ const USER_FIELD_PLACEHOLDERS: Partial<Record<keyof UserFormValues, string>> = {
   bio: 'Короткая заметка о пользователе',
   languageCode: 'ru',
   payoutUsdtTrc20: 'TRC20 адрес',
-  payoutUsdtBep20: 'BEP20 адрес'
+  payoutUsdtBep20: 'BEP20 адрес',
+  commissionPercent: '15'
 };
 
-type UpsertUserField = Extract<keyof UserFormValues, keyof UpsertUserPayload>;
+type UpsertUserTextField = Exclude<
+  Extract<keyof UserFormValues, keyof UpsertUserPayload>,
+  'commissionPercent' | 'isPartner'
+>;
 
 const MUTE_OPTIONS = [
   { label: '30 мин', minutes: 30 },
@@ -221,6 +240,9 @@ const SUMMARY_PERIOD_OPTIONS: { id: SummaryViewPeriod; label: string }[] = [
   { id: 'month', label: 'Месяц' },
   { id: 'custom', label: 'Период' }
 ];
+
+const FUND_RATE = 0.15;
+const FUND_RATE_PERCENT = FUND_RATE * 100;
 
 const currencyFormatter = new Intl.NumberFormat('ru-RU', {
   minimumFractionDigits: 2,
@@ -280,7 +302,12 @@ const modalInputClass =
 
 const thousandFormatter = new Intl.NumberFormat('ru-RU', {
   minimumFractionDigits: 0,
-  maximumFractionDigits: 1
+  maximumFractionDigits: 2
+});
+
+const percentFormatter = new Intl.NumberFormat('ru-RU', {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2
 });
 
 function getSummaryStatsForPeriod(
@@ -296,6 +323,35 @@ function getSummaryStatsForPeriod(
 
 function formatThousands(value: number) {
   return thousandFormatter.format(value / 1000);
+}
+
+function formatPercent(value: number | null | undefined) {
+  if (value === null || value === undefined) {
+    return '—';
+  }
+
+  return `${percentFormatter.format(value)}%`;
+}
+
+function parseCommissionPercentInput(input: string) {
+  const trimmed = input.trim();
+
+  if (!trimmed) {
+    return { value: null as number | null };
+  }
+
+  const normalized = Number(trimmed.replace(',', '.'));
+
+  if (Number.isNaN(normalized)) {
+    return { value: null as number | null, error: 'Некорректный процент' };
+  }
+
+  if (normalized < 0 || normalized > 100) {
+    return { value: null as number | null, error: 'Процент должен быть от 0 до 100' };
+  }
+
+  const rounded = Math.round(normalized * 100) / 100;
+  return { value: rounded };
 }
 
 export function AdminDashboard() {
@@ -337,6 +393,8 @@ export function AdminDashboard() {
     end: ''
   });
   const [summaryViewPeriod, setSummaryViewPeriod] = useState<SummaryViewPeriod>('week');
+  const summaryExportRef = useRef<HTMLDivElement | null>(null);
+  const [isExportingSummary, setIsExportingSummary] = useState(false);
   const [blockModal, setBlockModal] = useState<{
     mode: 'block' | 'unblock';
     user: ApiUser;
@@ -443,7 +501,10 @@ export function AdminDashboard() {
     mutationFn: createUser,
     onSuccess: async () => {
       toast.success('Пользователь добавлен');
-      await queryClient.invalidateQueries({ queryKey: ['users'] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['users'] }),
+        queryClient.invalidateQueries({ queryKey: ['check-summary'] })
+      ]);
     },
     onError: () => toast.error('Не удалось добавить пользователя')
   });
@@ -453,7 +514,10 @@ export function AdminDashboard() {
       updateUser(id, payload),
     onSuccess: async () => {
       toast.success('Пользователь обновлен');
-      await queryClient.invalidateQueries({ queryKey: ['users'] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['users'] }),
+        queryClient.invalidateQueries({ queryKey: ['check-summary'] })
+      ]);
     },
     onError: () => toast.error('Не удалось обновить пользователя')
   });
@@ -462,7 +526,10 @@ export function AdminDashboard() {
     mutationFn: deleteUser,
     onSuccess: async () => {
       toast.success('Пользователь удален');
-      await queryClient.invalidateQueries({ queryKey: ['users'] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['users'] }),
+        queryClient.invalidateQueries({ queryKey: ['check-summary'] })
+      ]);
     },
     onError: () => toast.error('Не удалось удалить пользователя')
   });
@@ -597,6 +664,10 @@ export function AdminDashboard() {
       const username = user.username?.toLowerCase() ?? '';
       const payoutTrc = user.payoutUsdtTrc20?.toLowerCase() ?? '';
       const payoutBep = user.payoutUsdtBep20?.toLowerCase() ?? '';
+      const percent = user.commissionPercent !== null && user.commissionPercent !== undefined
+        ? user.commissionPercent.toString().toLowerCase()
+        : '';
+      const partnerTag = user.isPartner ? 'partner партнёр партнер лидер' : '';
 
       return (
         user.telegramId.toLowerCase().includes(query) ||
@@ -604,7 +675,9 @@ export function AdminDashboard() {
         lastName.includes(query) ||
         username.includes(query) ||
         payoutTrc.includes(query) ||
-        payoutBep.includes(query)
+        payoutBep.includes(query) ||
+        percent.includes(query) ||
+        partnerTag.includes(query)
       );
     });
   }, [userList, userSearch]);
@@ -651,33 +724,95 @@ export function AdminDashboard() {
     }
   }, [summaryRanges?.custom, summaryViewPeriod]);
 
-  const summaryTableRows = useMemo(() => {
-    return summaryRows
-      .map((row) => {
-        const stats = getSummaryStatsForPeriod(row, summaryViewPeriod);
-        if (!stats) {
-          return null;
-        }
+  const summaryData = useMemo(() => {
+    const rowsWithStats = summaryRows.map((row) => ({
+      row,
+      stats: getSummaryStatsForPeriod(row, summaryViewPeriod)
+    }));
 
-        return { row, stats };
-      })
-      .filter(
-        (item): item is { row: ChecksSummaryRow; stats: CheckStats } =>
-          item !== null
-      );
+    const totalVolume = rowsWithStats.reduce((acc, item) => acc + (item.stats?.total ?? 0), 0);
+    const totalCount = rowsWithStats.reduce((acc, item) => acc + (item.stats?.count ?? 0), 0);
+    const fund = totalVolume * FUND_RATE;
+
+    let hasAnyPercent = false;
+    let hasPartner = false;
+
+    const rows = rowsWithStats.map(({ row, stats }) => {
+      const effectiveStats: CheckStats = stats ?? { count: 0, total: 0 };
+      const percent = row.user.commissionPercent ?? null;
+      const baseRate = percent !== null ? percent / 100 : null;
+
+      if (percent !== null) {
+        hasAnyPercent = true;
+      }
+      if (row.user.isPartner) {
+        hasPartner = true;
+      }
+
+      let salary: number | null = null;
+      let partnerFromOwn: number | null = null;
+      let partnerFromOthers: number | null = null;
+
+      if (baseRate !== null) {
+        if (row.user.isPartner) {
+          const othersTotal = Math.max(totalVolume - effectiveStats.total, 0);
+          partnerFromOwn = baseRate * FUND_RATE * effectiveStats.total;
+          partnerFromOthers = baseRate * FUND_RATE * othersTotal;
+          salary = partnerFromOwn + partnerFromOthers;
+        } else {
+          salary = fund * baseRate;
+        }
+      }
+
+      return {
+        user: row.user,
+        stats: effectiveStats,
+        percent,
+        salary,
+        partnerFromOwn,
+        partnerFromOthers
+      };
+    });
+
+    const aggregates = rows.reduce(
+      (acc, item) => {
+        acc.count += item.stats.count;
+        acc.total += item.stats.total;
+        if (item.salary !== null) {
+          acc.salary += item.salary;
+        }
+        if (item.partnerFromOwn !== null) {
+          acc.partnerFromOwn += item.partnerFromOwn;
+        }
+        if (item.partnerFromOthers !== null) {
+          acc.partnerFromOthers += item.partnerFromOthers;
+        }
+        return acc;
+      },
+      { count: 0, total: 0, salary: 0, partnerFromOwn: 0, partnerFromOthers: 0 }
+    );
+
+    return {
+      rows,
+      totalVolume,
+      totalCount,
+      fund,
+      aggregates,
+      hasAnyPercent,
+      hasPartner
+    };
   }, [summaryRows, summaryViewPeriod]);
 
-  const summaryTotals = useMemo(
-    () =>
-      summaryTableRows.reduce(
-        (acc, item) => ({
-          count: acc.count + item.stats.count,
-          total: acc.total + item.stats.total
-        }),
-        { count: 0, total: 0 }
-      ),
-    [summaryTableRows]
-  );
+  const summaryTableRows = summaryData.rows;
+  const summaryTotals = summaryData.aggregates;
+  const summaryVolume = summaryData.totalVolume;
+  const summaryCheckCount = summaryData.totalCount;
+  const summaryFund = summaryData.fund;
+  const hasAnyPercent = summaryData.hasAnyPercent;
+  const hasPartnersInSummary = summaryData.hasPartner;
+
+  const canExportSummary =
+    summaryTableRows.length > 0 && !checksSummaryQuery.isLoading && !checksSummaryQuery.isError;
 
   const summaryPeriodRange = useMemo(() => {
     if (!summaryRanges) {
@@ -696,6 +831,42 @@ export function AdminDashboard() {
 
   const todayDate = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
+  const handleExportSummary = useCallback(async () => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const node = summaryExportRef.current;
+
+    if (!node) {
+      toast.error('Сводка ещё не загрузилась');
+      return;
+    }
+
+    try {
+      setIsExportingSummary(true);
+      const backgroundColor =
+        getComputedStyle(document.body).backgroundColor || '#0f172a';
+      const dataUrl = await toPng(node, {
+        cacheBust: true,
+        pixelRatio: Math.max(window.devicePixelRatio || 1, 2),
+        backgroundColor
+      });
+
+      const link = document.createElement('a');
+      const safeLabel = SUMMARY_PERIOD_LABELS[summaryViewPeriod].toLowerCase();
+      const dateSuffix = new Date().toISOString().slice(0, 10);
+      link.download = `checks-summary-${safeLabel}-${dateSuffix}.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch (error) {
+      console.error('Failed to export summary table', error);
+      toast.error('Не удалось сохранить изображение');
+    } finally {
+      setIsExportingSummary(false);
+    }
+  }, [summaryViewPeriod]);
+
   const sanitizeAdminPayload = (values: AdminFormValues): UpsertAdminPayload => ({
     telegramId: values.telegramId.trim(),
     displayName: values.displayName?.trim() ? values.displayName.trim() : undefined,
@@ -707,7 +878,7 @@ export function AdminDashboard() {
       telegramId: values.telegramId.trim()
     };
 
-    const apply = (key: UpsertUserField) => {
+    const apply = (key: UpsertUserTextField) => {
       const value = values[key].trim();
 
       if (value.length > 0) {
@@ -723,6 +894,8 @@ export function AdminDashboard() {
     apply('languageCode');
     apply('payoutUsdtTrc20');
     apply('payoutUsdtBep20');
+
+    payload.isPartner = values.isPartner;
 
     return payload;
   };
@@ -761,7 +934,12 @@ export function AdminDashboard() {
       bio: user.bio ?? '',
       languageCode: user.languageCode ?? '',
       payoutUsdtTrc20: user.payoutUsdtTrc20 ?? '',
-      payoutUsdtBep20: user.payoutUsdtBep20 ?? ''
+      payoutUsdtBep20: user.payoutUsdtBep20 ?? '',
+      commissionPercent:
+        user.commissionPercent !== null && user.commissionPercent !== undefined
+          ? user.commissionPercent.toString()
+          : '',
+      isPartner: user.isPartner
     });
     setUserModal({ mode: 'edit', entity: user });
   };
@@ -972,7 +1150,18 @@ export function AdminDashboard() {
   });
 
   const handleUserSubmit = userForm.handleSubmit(async (values) => {
+    const percentResult = parseCommissionPercentInput(values.commissionPercent);
+
+    if (percentResult.error) {
+      toast.error(percentResult.error);
+      return;
+    }
+
     const payload = sanitizeUserPayload(values);
+
+    if (values.commissionPercent.trim().length > 0) {
+      payload.commissionPercent = percentResult.value;
+    }
 
     if (!payload.telegramId) {
       toast.error('Укажите telegramId');
@@ -1007,6 +1196,21 @@ export function AdminDashboard() {
       compare('languageCode', 'languageCode', userModal.entity.languageCode);
       compare('payoutUsdtTrc20', 'payoutUsdtTrc20', userModal.entity.payoutUsdtTrc20);
       compare('payoutUsdtBep20', 'payoutUsdtBep20', userModal.entity.payoutUsdtBep20);
+
+      if (values.isPartner !== userModal.entity.isPartner) {
+        updatePayload.isPartner = values.isPartner;
+      }
+
+      const currentPercent = userModal.entity.commissionPercent ?? null;
+      const trimmedPercent = values.commissionPercent.trim();
+
+      if (trimmedPercent.length > 0) {
+        if (percentResult.value !== currentPercent) {
+          updatePayload.commissionPercent = percentResult.value;
+        }
+      } else if (currentPercent !== null) {
+        updatePayload.commissionPercent = null;
+      }
 
       if (Object.keys(updatePayload).length === 0) {
         toast('Изменений нет');
@@ -1299,111 +1503,268 @@ export function AdminDashboard() {
           </div>
 
           <div className="flex flex-col gap-4 rounded-2xl bg-white/5 p-4">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h3 className="text-base font-semibold text-tgText">
-                  {SUMMARY_PERIOD_LABELS[summaryViewPeriod]}
-                  {summaryPeriodRange ? ` · ${summaryPeriodRange}` : ''}
-                </h3>
-                <p className="text-xs text-tgHint">
-                  Данные обновляются при смене периода и фильтров.
-                </p>
-                {checksSummaryQuery.data ? (
-                  <p className="text-[11px] text-tgHint">
-                    Обновлено: {dateTimeFormatter.format(new Date(checksSummaryQuery.data.generatedAt))}
+            <div ref={summaryExportRef} className="flex flex-col gap-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex-1">
+                  <h3 className="text-base font-semibold text-tgText">
+                    {SUMMARY_PERIOD_LABELS[summaryViewPeriod]}
+                    {summaryPeriodRange ? ` · ${summaryPeriodRange}` : ''}
+                  </h3>
+                  <p className="text-xs text-tgHint">
+                    Данные обновляются при смене периода и фильтров.
                   </p>
-                ) : null}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {SUMMARY_PERIOD_OPTIONS.map((option) => {
-                  const disabled = option.id === 'custom' && !summaryRanges?.custom;
-                  return (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() => setSummaryViewPeriod(option.id)}
-                      disabled={disabled}
-                      className={`rounded-xl px-3 py-1 text-sm font-medium transition-colors ${
-                        summaryViewPeriod === option.id
-                          ? 'bg-tgButton text-tgButtonText'
-                          : 'border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] bg-[color:var(--tg-theme-section-bg-color,rgba(255,255,255,0.05))] text-tgHint'
-                      } disabled:opacity-40`}
-                    >
-                      {option.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            {checksSummaryQuery.isLoading ? (
-              <p className="text-sm text-tgHint">Загрузка сводки...</p>
-            ) : checksSummaryQuery.isError ? (
-              <p className="text-sm text-red-400">Не удалось загрузить сводку чеков.</p>
-            ) : summaryTableRows.length === 0 ? (
-              <p className="text-sm text-tgHint">Нет данных за выбранный период.</p>
-            ) : (
-              <>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="text-xs uppercase tracking-wide text-tgHint">
-                        <th className="px-3 py-2 text-left font-medium">Имя</th>
-                        <th className="px-3 py-2 text-right font-medium">Счета (тыс. AED)</th>
-                        <th className="px-3 py-2 text-right font-medium">%</th>
-                        <th className="px-3 py-2 text-right font-medium">З/п (тыс. AED)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {summaryTableRows.map(({ row, stats }) => (
-                        <tr
-                          key={row.user.id}
-                          className="border-b border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.08))] last:border-0"
-                        >
-                          <td className="px-3 py-2 align-middle">
-                            <div className="flex flex-col">
-                              <span className="font-medium text-tgText">{formatUserDisplay(row.user)}</span>
-                              {row.user.username ? (
-                                <span className="text-xs text-tgHint">@{row.user.username}</span>
-                              ) : (
-                                <span className="text-xs text-tgHint">ID: {row.user.telegramId}</span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-3 py-2 text-right align-middle">
-                            <div className="flex flex-col items-end">
-                              <span className="font-semibold text-tgText">
-                                {formatThousands(stats.total)} тыс. AED
-                              </span>
-                              <span className="text-[11px] text-tgHint">{stats.count} шт.</span>
-                            </div>
-                          </td>
-                          <td className="px-3 py-2 text-right align-middle text-tgHint">—</td>
-                          <td className="px-3 py-2 text-right align-middle text-tgHint">—</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr className="font-semibold text-tgText">
-                        <td className="px-3 py-2">Всего</td>
-                        <td className="px-3 py-2 text-right">
-                          <div className="flex flex-col items-end">
-                            <span>{formatThousands(summaryTotals.total)} тыс. AED</span>
-                            <span className="text-[11px] font-normal text-tgHint">
-                              {summaryTotals.count} шт.
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-3 py-2 text-right text-tgHint">—</td>
-                        <td className="px-3 py-2 text-right text-tgHint">—</td>
-                      </tr>
-                    </tfoot>
-                  </table>
+                  {checksSummaryQuery.data ? (
+                    <p className="text-[11px] text-tgHint">
+                      Обновлено: {dateTimeFormatter.format(new Date(checksSummaryQuery.data.generatedAt))}
+                    </p>
+                  ) : null}
+                  {summaryTableRows.length > 0 ? (
+                    <p className="text-[11px] text-tgHint">
+                      Объём: {formatThousands(summaryVolume)} тыс. AED · Фонд (
+                      {percentFormatter.format(FUND_RATE_PERCENT)}%): {formatThousands(summaryFund)} тыс. AED
+                      {summaryCheckCount
+                        ? ` · Чеки: ${summaryCheckCount.toLocaleString('ru-RU')} шт.`
+                        : ''}
+                    </p>
+                  ) : null}
                 </div>
-                <p className="text-[11px] text-tgHint">
-                  Проценты и расчёт зарплаты добавим после уточнения формулы.
-                </p>
-              </>
-            )}
+                <div className="flex flex-wrap gap-2 sm:justify-end">
+                  {SUMMARY_PERIOD_OPTIONS.map((option) => {
+                    const disabled = option.id === 'custom' && !summaryRanges?.custom;
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => setSummaryViewPeriod(option.id)}
+                        disabled={disabled}
+                        className={`rounded-xl px-3 py-1 text-sm font-medium transition-colors ${
+                          summaryViewPeriod === option.id
+                            ? 'bg-tgButton text-tgButtonText'
+                            : 'border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] bg-[color:var(--tg-theme-section-bg-color,rgba(255,255,255,0.05))] text-tgHint'
+                        } disabled:opacity-40`}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              {checksSummaryQuery.isLoading ? (
+                <p className="text-sm text-tgHint">Загрузка сводки...</p>
+              ) : checksSummaryQuery.isError ? (
+                <p className="text-sm text-red-400">Не удалось загрузить сводку чеков.</p>
+              ) : summaryTableRows.length === 0 ? (
+                <p className="text-sm text-tgHint">Нет данных за выбранный период.</p>
+              ) : (
+                <>
+                  <div className="grid gap-2 sm:hidden">
+                    {summaryTableRows.map(
+                      ({ user, stats, percent, salary, partnerFromOthers, partnerFromOwn }) => (
+                        <div
+                          key={user.id}
+                          className="rounded-2xl border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.08))] bg-[color:var(--tg-theme-section-bg-color,rgba(255,255,255,0.05))] p-3"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <p className="text-sm font-semibold text-tgText">
+                                  {formatUserDisplay(user)}
+                                </p>
+                                {user.isPartner ? (
+                                  <span className="rounded-full bg-tgButton/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-tgButtonText">
+                                    Партнёр
+                                  </span>
+                                ) : null}
+                              </div>
+                              <p className="text-xs text-tgHint">
+                                {user.username ? `@${user.username}` : `ID: ${user.telegramId}`}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-sm font-semibold text-tgText">
+                                {formatThousands(stats.total)} тыс. AED
+                              </p>
+                              <p className="text-[11px] text-tgHint">{stats.count} шт.</p>
+                            </div>
+                          </div>
+                          <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                            <span className="text-tgHint">Процент</span>
+                            <span className="text-right text-sm text-tgText">{formatPercent(percent)}</span>
+                            <span className="text-tgHint">З/п</span>
+                            <span className="text-right text-sm font-semibold text-tgText">
+                              {salary !== null ? `${formatThousands(salary)} тыс. AED` : '—'}
+                            </span>
+                            {user.isPartner ? (
+                              <>
+                                <span className="text-tgHint">Из других</span>
+                                <span className="text-right text-sm text-tgText">
+                                  {partnerFromOthers !== null
+                                    ? `${formatThousands(partnerFromOthers)} тыс. AED`
+                                    : '—'}
+                                </span>
+                                <span className="text-tgHint">Со своих</span>
+                                <span className="text-right text-sm text-tgText">
+                                  {partnerFromOwn !== null
+                                    ? `${formatThousands(partnerFromOwn)} тыс. AED`
+                                    : '—'}
+                                </span>
+                              </>
+                            ) : null}
+                          </div>
+                        </div>
+                      )
+                    )}
+                    <div className="rounded-2xl border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.08))] bg-[color:var(--tg-theme-section-bg-color,rgba(255,255,255,0.05))] p-3">
+                      <div className="flex items-start justify-between">
+                        <span className="font-semibold text-tgText">Всего</span>
+                        <div className="text-right">
+                          <p className="text-sm font-semibold text-tgText">
+                            {formatThousands(summaryTotals.total)} тыс. AED
+                          </p>
+                          <p className="text-[11px] text-tgHint">{summaryTotals.count} шт.</p>
+                        </div>
+                      </div>
+                      {hasAnyPercent ? (
+                        <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-tgHint">
+                          <span>З/п</span>
+                          <span className="text-right text-sm text-tgText">
+                            {formatThousands(summaryTotals.salary)} тыс. AED
+                          </span>
+                          {hasPartnersInSummary ? (
+                            <>
+                              <span>Из других (партнёры)</span>
+                              <span className="text-right text-sm text-tgText">
+                                {formatThousands(summaryTotals.partnerFromOthers)} тыс. AED
+                              </span>
+                              <span>Со своих (партнёры)</span>
+                              <span className="text-right text-sm text-tgText">
+                                {formatThousands(summaryTotals.partnerFromOwn)} тыс. AED
+                              </span>
+                            </>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="hidden overflow-x-auto sm:block">
+                    <table className="min-w-full text-sm">
+                      <thead>
+                        <tr className="text-xs uppercase tracking-wide text-tgHint">
+                          <th className="px-3 py-2 text-left font-medium">Имя</th>
+                          <th className="px-3 py-2 text-right font-medium">Счета (тыс. AED)</th>
+                          <th className="px-3 py-2 text-right font-medium">%</th>
+                          <th className="px-3 py-2 text-right font-medium">З/п (тыс. AED)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {summaryTableRows.map(
+                          ({ user, stats, percent, salary, partnerFromOthers, partnerFromOwn }) => (
+                            <tr
+                              key={user.id}
+                              className="border-b border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.08))] last:border-0"
+                            >
+                              <td className="px-3 py-2 align-middle">
+                                <div className="flex flex-col gap-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-medium text-tgText">
+                                      {formatUserDisplay(user)}
+                                    </span>
+                                    {user.isPartner ? (
+                                      <span className="rounded-full bg-tgButton/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-tgButtonText">
+                                        Партнёр
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  {user.username ? (
+                                    <span className="text-xs text-tgHint">@{user.username}</span>
+                                  ) : (
+                                    <span className="text-xs text-tgHint">ID: {user.telegramId}</span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-3 py-2 text-right align-middle">
+                                <div className="flex flex-col items-end">
+                                  <span className="font-semibold text-tgText">
+                                    {formatThousands(stats.total)} тыс. AED
+                                  </span>
+                                  <span className="text-[11px] text-tgHint">{stats.count} шт.</span>
+                                </div>
+                              </td>
+                              <td className="px-3 py-2 text-right align-middle">
+                                <span className="text-sm text-tgText">{formatPercent(percent)}</span>
+                              </td>
+                              <td className="px-3 py-2 text-right align-middle">
+                                {salary !== null ? (
+                                  <div className="flex flex-col items-end">
+                                    <span className="font-semibold text-tgText">
+                                      {formatThousands(salary)} тыс. AED
+                                    </span>
+                                    {user.isPartner && partnerFromOthers !== null && partnerFromOwn !== null ? (
+                                      <>
+                                        <span className="text-[11px] text-tgHint">
+                                          Из других: {formatThousands(partnerFromOthers)} тыс. AED
+                                        </span>
+                                        <span className="text-[11px] text-tgHint">
+                                          Со своих: {formatThousands(partnerFromOwn)} тыс. AED
+                                        </span>
+                                      </>
+                                    ) : null}
+                                  </div>
+                                ) : (
+                                  <span className="text-sm text-tgHint">—</span>
+                                )}
+                              </td>
+                            </tr>
+                          )
+                        )}
+                      </tbody>
+                      <tfoot>
+                        <tr className="font-semibold text-tgText">
+                          <td className="px-3 py-2">Всего</td>
+                          <td className="px-3 py-2 text-right">
+                            <div className="flex flex-col items-end">
+                              <span>{formatThousands(summaryTotals.total)} тыс. AED</span>
+                              <span className="text-[11px] font-normal text-tgHint">
+                                {summaryTotals.count} шт.
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 text-right text-tgHint">—</td>
+                          <td className="px-3 py-2 text-right">
+                            {hasAnyPercent ? (
+                              <div className="flex flex-col items-end">
+                                <span>{formatThousands(summaryTotals.salary)} тыс. AED</span>
+                                {hasPartnersInSummary ? (
+                                  <span className="text-[11px] font-normal text-tgHint">
+                                    Из других: {formatThousands(summaryTotals.partnerFromOthers)} тыс. AED ·
+                                    Со своих: {formatThousands(summaryTotals.partnerFromOwn)} тыс. AED
+                                  </span>
+                                ) : null}
+                              </div>
+                            ) : (
+                              <span className="text-tgHint">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                  <p className="text-[11px] text-tgHint">
+                    Фонд = {percentFormatter.format(FUND_RATE_PERCENT)}% от объёма (
+                    {formatThousands(summaryFund)} тыс. AED). Зарплата считается от фонда; для партнёров
+                    показываем долю из чужих и собственных чеков.
+                  </p>
+                </>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={handleExportSummary}
+              disabled={!canExportSummary || isExportingSummary}
+              className="w-full rounded-xl border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] px-4 py-2 text-sm font-medium text-tgText transition-colors hover:border-[color:var(--tg-theme-accent-text-color,#5aa7ff)] hover:text-tgAccent disabled:opacity-40 sm:w-auto sm:self-end"
+            >
+              {isExportingSummary ? 'Формирование…' : 'Скачать PNG'}
+            </button>
           </div>
         </div>
       ) : (
@@ -1437,13 +1798,18 @@ export function AdminDashboard() {
               filteredUserList.map((user) => (
                 <div key={user.id} className="flex flex-col gap-2 rounded-2xl bg-white/5 p-4">
                   <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <p className="text-base font-semibold">
-                        {user.firstName ?? user.username ?? user.telegramId}
-                      </p>
-                      <p className="text-sm text-tgHint">
-                        @{user.username ?? 'без username'}
-                      </p>
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-2">
+                        <p className="text-base font-semibold">
+                          {user.firstName ?? user.username ?? user.telegramId}
+                        </p>
+                        {user.isPartner ? (
+                          <span className="rounded-full bg-tgButton/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-tgButtonText">
+                            Партнёр
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="text-sm text-tgHint">@{user.username ?? 'без username'}</p>
                       <p className="text-sm text-tgHint">ID: {user.telegramId}</p>
                       {user.isBlocked ? (
                         <p className="text-xs text-red-400">Заблокирован</p>
@@ -1638,6 +2004,32 @@ export function AdminDashboard() {
               placeholder={USER_FIELD_PLACEHOLDERS.payoutUsdtBep20}
               className={modalInputClass}
             />
+          )}
+
+          {renderUserField(
+            'commissionPercent',
+            <input
+              type="number"
+              inputMode="decimal"
+              step="0.1"
+              min="0"
+              max="100"
+              {...userForm.register('commissionPercent')}
+              placeholder={USER_FIELD_PLACEHOLDERS.commissionPercent}
+              className={modalInputClass}
+            />
+          )}
+
+          {renderUserField(
+            'isPartner',
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                {...userForm.register('isPartner')}
+                className="h-5 w-5 rounded border border-white/30 bg-white/10 accent-[color:var(--tg-theme-accent-text-color,#5aa7ff)]"
+              />
+              <span className="text-sm text-tgText">Да</span>
+            </div>
           )}
 
           <button

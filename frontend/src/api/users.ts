@@ -14,6 +14,8 @@ export interface UpsertUserPayload {
   payoutUsdtTrc20?: string;
   payoutUsdtBep20?: string;
   chatId?: string;
+  commissionPercent?: number | null;
+  isPartner?: boolean;
 }
 
 export async function listUsers() {
