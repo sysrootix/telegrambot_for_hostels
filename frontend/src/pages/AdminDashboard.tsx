@@ -300,7 +300,7 @@ function formatRange(range?: { start: string; end: string } | null) {
 const modalInputClass =
   'w-full rounded-2xl border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] bg-[color:var(--tg-theme-section-bg-color,rgba(255,255,255,0.04))] px-3 py-2 text-base text-tgText placeholder:text-tgHint focus:border-[color:var(--tg-theme-accent-text-color,#5aa7ff)] focus:outline-none focus:ring-0 transition-colors';
 
-const thousandFormatter = new Intl.NumberFormat('ru-RU', {
+const amountFormatter = new Intl.NumberFormat('ru-RU', {
   minimumFractionDigits: 0,
   maximumFractionDigits: 2
 });
@@ -321,8 +321,8 @@ function getSummaryStatsForPeriod(
   return row[period];
 }
 
-function formatThousands(value: number) {
-  return thousandFormatter.format(value / 1000);
+function formatAmount(value: number) {
+  return amountFormatter.format(value);
 }
 
 function formatPercent(value: number | null | undefined) {
@@ -1520,8 +1520,8 @@ export function AdminDashboard() {
                   ) : null}
                   {summaryTableRows.length > 0 ? (
                     <p className="text-[11px] text-tgHint">
-                      Объём: {formatThousands(summaryVolume)} тыс. AED · Фонд (
-                      {percentFormatter.format(FUND_RATE_PERCENT)}%): {formatThousands(summaryFund)} тыс. AED
+                      Объём: {formatAmount(summaryVolume)} AED · Фонд (
+                      {percentFormatter.format(FUND_RATE_PERCENT)}%): {formatAmount(summaryFund)} AED
                       {summaryCheckCount
                         ? ` · Чеки: ${summaryCheckCount.toLocaleString('ru-RU')} шт.`
                         : ''}
@@ -1582,7 +1582,7 @@ export function AdminDashboard() {
                             </div>
                             <div className="text-right">
                               <p className="text-sm font-semibold text-tgText">
-                                {formatThousands(stats.total)} тыс. AED
+                                {formatAmount(stats.total)} AED
                               </p>
                               <p className="text-[11px] text-tgHint">{stats.count} шт.</p>
                             </div>
@@ -1592,20 +1592,20 @@ export function AdminDashboard() {
                             <span className="text-right text-sm text-tgText">{formatPercent(percent)}</span>
                             <span className="text-tgHint">З/п</span>
                             <span className="text-right text-sm font-semibold text-tgText">
-                              {salary !== null ? `${formatThousands(salary)} тыс. AED` : '—'}
+                              {salary !== null ? `${formatAmount(salary)} AED` : '—'}
                             </span>
                             {user.isPartner ? (
                               <>
                                 <span className="text-tgHint">Из других</span>
                                 <span className="text-right text-sm text-tgText">
                                   {partnerFromOthers !== null
-                                    ? `${formatThousands(partnerFromOthers)} тыс. AED`
+                                    ? `${formatAmount(partnerFromOthers)} AED`
                                     : '—'}
                                 </span>
                                 <span className="text-tgHint">Со своих</span>
                                 <span className="text-right text-sm text-tgText">
                                   {partnerFromOwn !== null
-                                    ? `${formatThousands(partnerFromOwn)} тыс. AED`
+                                    ? `${formatAmount(partnerFromOwn)} AED`
                                     : '—'}
                                 </span>
                               </>
@@ -1619,7 +1619,7 @@ export function AdminDashboard() {
                         <span className="font-semibold text-tgText">Всего</span>
                         <div className="text-right">
                           <p className="text-sm font-semibold text-tgText">
-                            {formatThousands(summaryTotals.total)} тыс. AED
+                            {formatAmount(summaryTotals.total)} AED
                           </p>
                           <p className="text-[11px] text-tgHint">{summaryTotals.count} шт.</p>
                         </div>
@@ -1628,17 +1628,17 @@ export function AdminDashboard() {
                         <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-tgHint">
                           <span>З/п</span>
                           <span className="text-right text-sm text-tgText">
-                            {formatThousands(summaryTotals.salary)} тыс. AED
+                            {formatAmount(summaryTotals.salary)} AED
                           </span>
                           {hasPartnersInSummary ? (
                             <>
                               <span>Из других (партнёры)</span>
                               <span className="text-right text-sm text-tgText">
-                                {formatThousands(summaryTotals.partnerFromOthers)} тыс. AED
+                                {formatAmount(summaryTotals.partnerFromOthers)} AED
                               </span>
                               <span>Со своих (партнёры)</span>
                               <span className="text-right text-sm text-tgText">
-                                {formatThousands(summaryTotals.partnerFromOwn)} тыс. AED
+                                {formatAmount(summaryTotals.partnerFromOwn)} AED
                               </span>
                             </>
                           ) : null}
@@ -1651,9 +1651,9 @@ export function AdminDashboard() {
                       <thead>
                         <tr className="text-xs uppercase tracking-wide text-tgHint">
                           <th className="px-3 py-2 text-left font-medium">Имя</th>
-                          <th className="px-3 py-2 text-right font-medium">Счета (тыс. AED)</th>
+                          <th className="px-3 py-2 text-right font-medium">Счета (AED)</th>
                           <th className="px-3 py-2 text-right font-medium">%</th>
-                          <th className="px-3 py-2 text-right font-medium">З/п (тыс. AED)</th>
+                          <th className="px-3 py-2 text-right font-medium">З/п (AED)</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1685,7 +1685,7 @@ export function AdminDashboard() {
                               <td className="px-3 py-2 text-right align-middle">
                                 <div className="flex flex-col items-end">
                                   <span className="font-semibold text-tgText">
-                                    {formatThousands(stats.total)} тыс. AED
+                                    {formatAmount(stats.total)} AED
                                   </span>
                                   <span className="text-[11px] text-tgHint">{stats.count} шт.</span>
                                 </div>
@@ -1697,15 +1697,15 @@ export function AdminDashboard() {
                                 {salary !== null ? (
                                   <div className="flex flex-col items-end">
                                     <span className="font-semibold text-tgText">
-                                      {formatThousands(salary)} тыс. AED
+                                      {formatAmount(salary)} AED
                                     </span>
                                     {user.isPartner && partnerFromOthers !== null && partnerFromOwn !== null ? (
                                       <>
                                         <span className="text-[11px] text-tgHint">
-                                          Из других: {formatThousands(partnerFromOthers)} тыс. AED
+                                          Из других: {formatAmount(partnerFromOthers)} AED
                                         </span>
                                         <span className="text-[11px] text-tgHint">
-                                          Со своих: {formatThousands(partnerFromOwn)} тыс. AED
+                                          Со своих: {formatAmount(partnerFromOwn)} AED
                                         </span>
                                       </>
                                     ) : null}
@@ -1723,7 +1723,7 @@ export function AdminDashboard() {
                           <td className="px-3 py-2">Всего</td>
                           <td className="px-3 py-2 text-right">
                             <div className="flex flex-col items-end">
-                              <span>{formatThousands(summaryTotals.total)} тыс. AED</span>
+                              <span>{formatAmount(summaryTotals.total)} AED</span>
                               <span className="text-[11px] font-normal text-tgHint">
                                 {summaryTotals.count} шт.
                               </span>
@@ -1733,11 +1733,11 @@ export function AdminDashboard() {
                           <td className="px-3 py-2 text-right">
                             {hasAnyPercent ? (
                               <div className="flex flex-col items-end">
-                                <span>{formatThousands(summaryTotals.salary)} тыс. AED</span>
+                                <span>{formatAmount(summaryTotals.salary)} AED</span>
                                 {hasPartnersInSummary ? (
                                   <span className="text-[11px] font-normal text-tgHint">
-                                    Из других: {formatThousands(summaryTotals.partnerFromOthers)} тыс. AED ·
-                                    Со своих: {formatThousands(summaryTotals.partnerFromOwn)} тыс. AED
+                                    Из других: {formatAmount(summaryTotals.partnerFromOthers)} AED · Со своих:{' '}
+                                    {formatAmount(summaryTotals.partnerFromOwn)} AED
                                   </span>
                                 ) : null}
                               </div>
@@ -1751,8 +1751,8 @@ export function AdminDashboard() {
                   </div>
                   <p className="text-[11px] text-tgHint">
                     Фонд = {percentFormatter.format(FUND_RATE_PERCENT)}% от объёма (
-                    {formatThousands(summaryFund)} тыс. AED). Зарплата считается от фонда; для партнёров
-                    показываем долю из чужих и собственных чеков.
+                    {formatAmount(summaryFund)} AED). Зарплата считается от фонда; для партнёров показываем
+                    долю из чужих и собственных чеков.
                   </p>
                 </>
               )}
