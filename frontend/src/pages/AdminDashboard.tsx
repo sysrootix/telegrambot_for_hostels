@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
@@ -32,7 +32,7 @@ import {
   type ListChecksParams
 } from '@/api/checks';
 import { useSession } from '@/providers/SessionProvider';
-import type { ApiAdmin, ApiCheck, ApiUser, ChecksSummaryRow } from '@/types/api';
+import type { ApiAdmin, ApiCheck, ApiUser, CheckStats, ChecksSummaryRow } from '@/types/api';
 
 type AdminFormValues = {
   telegramId: string;
@@ -194,12 +194,28 @@ interface CheckFilterState {
   endDate?: string;
 }
 
+type SummaryViewPeriod = 'day' | 'week' | 'month' | 'custom';
+
 const checkFormDefaultValues: CheckFormValues = {
   amount: '',
   note: ''
 };
 
 const CHECK_PERIOD_OPTIONS: { id: CheckPeriod; label: string }[] = [
+  { id: 'day', label: 'Сегодня' },
+  { id: 'week', label: 'Неделя' },
+  { id: 'month', label: 'Месяц' },
+  { id: 'custom', label: 'Период' }
+];
+
+const SUMMARY_PERIOD_LABELS: Record<SummaryViewPeriod, string> = {
+  day: 'Сегодня',
+  week: 'Неделя',
+  month: 'Месяц',
+  custom: 'Период'
+};
+
+const SUMMARY_PERIOD_OPTIONS: { id: SummaryViewPeriod; label: string }[] = [
   { id: 'day', label: 'Сегодня' },
   { id: 'week', label: 'Неделя' },
   { id: 'month', label: 'Месяц' },
@@ -262,6 +278,26 @@ function formatRange(range?: { start: string; end: string } | null) {
 const modalInputClass =
   'w-full rounded-2xl border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] bg-[color:var(--tg-theme-section-bg-color,rgba(255,255,255,0.04))] px-3 py-2 text-base text-tgText placeholder:text-tgHint focus:border-[color:var(--tg-theme-accent-text-color,#5aa7ff)] focus:outline-none focus:ring-0 transition-colors';
 
+const thousandFormatter = new Intl.NumberFormat('ru-RU', {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 1
+});
+
+function getSummaryStatsForPeriod(
+  row: ChecksSummaryRow,
+  period: SummaryViewPeriod
+): CheckStats | null {
+  if (period === 'custom') {
+    return row.custom ?? null;
+  }
+
+  return row[period];
+}
+
+function formatThousands(value: number) {
+  return thousandFormatter.format(value / 1000);
+}
+
 export function AdminDashboard() {
   const { session } = useSession();
   const queryClient = useQueryClient();
@@ -300,6 +336,7 @@ export function AdminDashboard() {
     start: '',
     end: ''
   });
+  const [summaryViewPeriod, setSummaryViewPeriod] = useState<SummaryViewPeriod>('week');
   const [blockModal, setBlockModal] = useState<{
     mode: 'block' | 'unblock';
     user: ApiUser;
@@ -606,10 +643,56 @@ export function AdminDashboard() {
   }, [checksQuery.data]);
 
   const summaryRows = useMemo(() => checksSummaryQuery.data?.users ?? [], [checksSummaryQuery.data]);
+  const summaryRanges = checksSummaryQuery.data?.ranges;
+
+  useEffect(() => {
+    if (summaryViewPeriod === 'custom' && !summaryRanges?.custom) {
+      setSummaryViewPeriod('week');
+    }
+  }, [summaryRanges?.custom, summaryViewPeriod]);
+
+  const summaryTableRows = useMemo(() => {
+    return summaryRows
+      .map((row) => {
+        const stats = getSummaryStatsForPeriod(row, summaryViewPeriod);
+        if (!stats) {
+          return null;
+        }
+
+        return { row, stats };
+      })
+      .filter(
+        (item): item is { row: ChecksSummaryRow; stats: CheckStats } =>
+          item !== null
+      );
+  }, [summaryRows, summaryViewPeriod]);
+
+  const summaryTotals = useMemo(
+    () =>
+      summaryTableRows.reduce(
+        (acc, item) => ({
+          count: acc.count + item.stats.count,
+          total: acc.total + item.stats.total
+        }),
+        { count: 0, total: 0 }
+      ),
+    [summaryTableRows]
+  );
+
+  const summaryPeriodRange = useMemo(() => {
+    if (!summaryRanges) {
+      return '';
+    }
+
+    const range =
+      summaryViewPeriod === 'custom'
+        ? summaryRanges.custom
+        : summaryRanges[summaryViewPeriod];
+
+    return formatRange(range ?? null);
+  }, [summaryRanges, summaryViewPeriod]);
 
   const isSummaryRangeActive = Boolean(summaryRange.start || summaryRange.end);
-
-  const summaryRanges = checksSummaryQuery.data?.ranges;
 
   const todayDate = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
@@ -1059,16 +1142,6 @@ export function AdminDashboard() {
   const renderAdminField = (field: keyof AdminFormValues, input: React.ReactNode) =>
     renderField(ADMIN_FIELD_META[field], field, input);
 
-  const renderSummaryStat = (label: string, stats?: { count: number; total: number }) => (
-    <div className="flex flex-col gap-1 rounded-2xl border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.1))] bg-[color:var(--tg-theme-section-bg-color,rgba(255,255,255,0.04))] px-3 py-2">
-      <span className="text-xs uppercase tracking-wide text-tgHint">{label}</span>
-      <span className="text-lg font-semibold text-tgText">{stats?.count ?? 0}</span>
-      <span className="text-xs text-tgHint">
-        Сумма: {formatCheckAmount(stats?.total ?? 0)}
-      </span>
-    </div>
-  );
-
   return (
     <section className="flex flex-col gap-6">
       <div className="flex gap-2 overflow-x-auto rounded-2xl bg-white/5 p-2">
@@ -1172,11 +1245,6 @@ export function AdminDashboard() {
             <p className="mt-1 text-sm text-tgHint">
               Статистика по пользователям за сегодня, текущую неделю, месяц и свой период.
             </p>
-            {checksSummaryQuery.data && (
-              <p className="mt-2 text-xs text-tgHint">
-                Обновлено: {dateTimeFormatter.format(new Date(checksSummaryQuery.data.generatedAt))}
-              </p>
-            )}
           </div>
 
           <div className="flex flex-col gap-3 rounded-2xl bg-white/5 p-4">
@@ -1230,33 +1298,111 @@ export function AdminDashboard() {
             </div>
           </div>
 
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-4 rounded-2xl bg-white/5 p-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="text-base font-semibold text-tgText">
+                  {SUMMARY_PERIOD_LABELS[summaryViewPeriod]}
+                  {summaryPeriodRange ? ` · ${summaryPeriodRange}` : ''}
+                </h3>
+                <p className="text-xs text-tgHint">
+                  Данные обновляются при смене периода и фильтров.
+                </p>
+                {checksSummaryQuery.data ? (
+                  <p className="text-[11px] text-tgHint">
+                    Обновлено: {dateTimeFormatter.format(new Date(checksSummaryQuery.data.generatedAt))}
+                  </p>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {SUMMARY_PERIOD_OPTIONS.map((option) => {
+                  const disabled = option.id === 'custom' && !summaryRanges?.custom;
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => setSummaryViewPeriod(option.id)}
+                      disabled={disabled}
+                      className={`rounded-xl px-3 py-1 text-sm font-medium transition-colors ${
+                        summaryViewPeriod === option.id
+                          ? 'bg-tgButton text-tgButtonText'
+                          : 'border border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.12))] bg-[color:var(--tg-theme-section-bg-color,rgba(255,255,255,0.05))] text-tgHint'
+                      } disabled:opacity-40`}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
             {checksSummaryQuery.isLoading ? (
               <p className="text-sm text-tgHint">Загрузка сводки...</p>
             ) : checksSummaryQuery.isError ? (
               <p className="text-sm text-red-400">Не удалось загрузить сводку чеков.</p>
-            ) : summaryRows.length === 0 ? (
-              <p className="text-sm text-tgHint">Пользователи не найдены.</p>
+            ) : summaryTableRows.length === 0 ? (
+              <p className="text-sm text-tgHint">Нет данных за выбранный период.</p>
             ) : (
-              summaryRows.map((row) => (
-                <div key={row.user.id} className="flex flex-col gap-3 rounded-2xl bg-white/5 p-4">
-                  <div className="flex flex-col">
-                    <span className="text-base font-semibold text-tgText">
-                      {formatUserDisplay(row.user)}
-                    </span>
-                    <span className="text-sm text-tgHint">
-                      @{row.user.username ?? 'без username'}
-                    </span>
-                    <span className="text-xs text-tgHint">ID: {row.user.telegramId}</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
-                    {renderSummaryStat('Сегодня', row.day)}
-                    {renderSummaryStat('Неделя', row.week)}
-                    {renderSummaryStat('Месяц', row.month)}
-                    {summaryRanges?.custom ? renderSummaryStat('Период', row.custom) : null}
-                  </div>
+              <>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="text-xs uppercase tracking-wide text-tgHint">
+                        <th className="px-3 py-2 text-left font-medium">Имя</th>
+                        <th className="px-3 py-2 text-right font-medium">Счета (тыс. AED)</th>
+                        <th className="px-3 py-2 text-right font-medium">%</th>
+                        <th className="px-3 py-2 text-right font-medium">З/п (тыс. AED)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {summaryTableRows.map(({ row, stats }) => (
+                        <tr
+                          key={row.user.id}
+                          className="border-b border-[color:var(--tg-theme-section-separator-color,rgba(255,255,255,0.08))] last:border-0"
+                        >
+                          <td className="px-3 py-2 align-middle">
+                            <div className="flex flex-col">
+                              <span className="font-medium text-tgText">{formatUserDisplay(row.user)}</span>
+                              {row.user.username ? (
+                                <span className="text-xs text-tgHint">@{row.user.username}</span>
+                              ) : (
+                                <span className="text-xs text-tgHint">ID: {row.user.telegramId}</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 text-right align-middle">
+                            <div className="flex flex-col items-end">
+                              <span className="font-semibold text-tgText">
+                                {formatThousands(stats.total)} тыс. AED
+                              </span>
+                              <span className="text-[11px] text-tgHint">{stats.count} шт.</span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 text-right align-middle text-tgHint">—</td>
+                          <td className="px-3 py-2 text-right align-middle text-tgHint">—</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="font-semibold text-tgText">
+                        <td className="px-3 py-2">Всего</td>
+                        <td className="px-3 py-2 text-right">
+                          <div className="flex flex-col items-end">
+                            <span>{formatThousands(summaryTotals.total)} тыс. AED</span>
+                            <span className="text-[11px] font-normal text-tgHint">
+                              {summaryTotals.count} шт.
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 text-right text-tgHint">—</td>
+                        <td className="px-3 py-2 text-right text-tgHint">—</td>
+                      </tr>
+                    </tfoot>
+                  </table>
                 </div>
-              ))
+                <p className="text-[11px] text-tgHint">
+                  Проценты и расчёт зарплаты добавим после уточнения формулы.
+                </p>
+              </>
             )}
           </div>
         </div>
