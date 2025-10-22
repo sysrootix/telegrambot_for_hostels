@@ -204,8 +204,19 @@ router.get(
         }
 
         targetUserId = target.id;
-      } else {
+      } else if (query.userId === 'me' || !query.userId) {
         targetUserId = user.id;
+      } else {
+        const target = await prisma.user.findUnique({
+          where: { id: query.userId },
+          select: { id: true, isPartner: true }
+        });
+
+        if (!target || target.isPartner) {
+          return res.status(403).json({ error: 'Недостаточно прав' });
+        }
+
+        targetUserId = target.id;
       }
     }
 

@@ -868,17 +868,20 @@ export function AdminDashboard() {
       });
 
       const blob = dataUrlToBlob(dataUrl);
-      const blobUrl = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      const safeLabel = SUMMARY_PERIOD_LABELS[summaryViewPeriod].toLowerCase();
-      const dateSuffix = new Date().toISOString().slice(0, 10);
-      link.download = `checks-summary-${safeLabel}-${dateSuffix}.png`;
-      link.href = blobUrl;
-      link.rel = 'noopener';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(blobUrl);
+      const fileHandle = await window.showSaveFilePicker({
+        suggestedName: `checks-summary-${SUMMARY_PERIOD_LABELS[summaryViewPeriod].toLowerCase()}-${new Date()
+          .toISOString()
+          .slice(0, 10)}.png`,
+        types: [
+          {
+            description: 'PNG изображение',
+            accept: { 'image/png': ['.png'] }
+          }
+        ]
+      });
+      const writable = await fileHandle.createWritable();
+      await writable.write(blob);
+      await writable.close();
       toast.success('Изображение сохранено');
     } catch (error) {
       console.error('Failed to export summary table', error);
