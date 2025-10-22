@@ -354,6 +354,20 @@ function parseCommissionPercentInput(input: string) {
   return { value: rounded };
 }
 
+function dataUrlToBlob(dataUrl: string) {
+  const [header, payload] = dataUrl.split(',');
+  const mimeMatch = header?.match(/data:(.*?);base64/);
+  const mime = mimeMatch?.[1] ?? 'image/png';
+  const binary = atob(payload ?? '');
+  const buffer = new Uint8Array(binary.length);
+
+  for (let index = 0; index < binary.length; index += 1) {
+    buffer[index] = binary.charCodeAt(index);
+  }
+
+  return new Blob([buffer], { type: mime });
+}
+
 export function AdminDashboard() {
   const { session } = useSession();
   const queryClient = useQueryClient();
@@ -853,12 +867,19 @@ export function AdminDashboard() {
         backgroundColor
       });
 
+      const blob = dataUrlToBlob(dataUrl);
+      const blobUrl = URL.createObjectURL(blob);
       const link = document.createElement('a');
       const safeLabel = SUMMARY_PERIOD_LABELS[summaryViewPeriod].toLowerCase();
       const dateSuffix = new Date().toISOString().slice(0, 10);
       link.download = `checks-summary-${safeLabel}-${dateSuffix}.png`;
-      link.href = dataUrl;
+      link.href = blobUrl;
+      link.rel = 'noopener';
+      document.body.appendChild(link);
       link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+      toast.success('Изображение сохранено');
     } catch (error) {
       console.error('Failed to export summary table', error);
       toast.error('Не удалось сохранить изображение');
